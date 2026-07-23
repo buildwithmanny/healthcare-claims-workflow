@@ -1,0 +1,6 @@
+diagnosis_code,description,active
+DX001,Synthetic routine evaluation,TRUE
+DX002,Synthetic respiratory condition,TRUE
+DX003,Synthetic musculoskeletal condition,TRUE
+DX004,Synthetic digestive condition,TRUE
+DX005,Synthetic inactive reference code,FALSE

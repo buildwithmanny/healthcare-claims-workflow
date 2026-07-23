@@ -1,0 +1,6 @@
+member_id,first_name,last_name,date_of_birth,plan_id,coverage_start,coverage_end,member_status
+M001,Avery,Carter,1988-04-12,PLAN001,2026-01-01,2026-12-31,ACTIVE
+M002,Jordan,Lee,1979-09-23,PLAN001,2026-01-01,2026-12-31,ACTIVE
+M003,Taylor,Morgan,1992-02-15,PLAN002,2026-01-01,2026-12-31,ACTIVE
+M004,Cameron,Rivera,1985-11-30,PLAN002,2026-01-01,2026-12-31,ACTIVE
+M005,Riley,Patel,1996-06-08,PLAN003,2026-01-01,2026-12-31,ACTIVE

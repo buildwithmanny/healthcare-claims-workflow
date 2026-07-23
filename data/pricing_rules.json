@@ -1,0 +1,22 @@
+[
+    {
+        "procedure_code": "PROC1001",
+        "allowed_amount": 150.00,
+        "pricing_method": "STANDARD"
+    },
+    {
+        "procedure_code": "PROC1002",
+        "allowed_amount": 300.00,
+        "pricing_method": "STANDARD"
+    },
+    {
+        "procedure_code": "PROC1003",
+        "allowed_amount": 600.00,
+        "pricing_method": "STANDARD"
+    },
+    {
+        "procedure_code": "PROC1004",
+        "allowed_amount": 800.00,
+        "pricing_method": "STANDARD"
+    }
+]

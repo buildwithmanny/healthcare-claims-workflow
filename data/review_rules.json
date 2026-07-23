@@ -1,0 +1,17 @@
+{
+    "high_billed_amount": {
+        "threshold": 1000.00,
+        "action": "MANUAL_REVIEW"
+    },
+    "high_claim_frequency": {
+        "max_claims_per_member": 5,
+        "period_days": 30,
+        "action": "MANUAL_REVIEW"
+    },
+    "manual_review_procedure_codes": {
+        "procedure_codes": [
+            "PROC9001"
+        ],
+        "action": "MANUAL_REVIEW"
+    }
+}
