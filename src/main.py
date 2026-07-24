@@ -6,27 +6,31 @@ from src.claim_loader import (
 )
 from src.database import (
     fetch_claim_status_summary,
+    fetch_eligibility_decisions,
     fetch_validation_failures,
     reset_workflow_data,
     test_connection,
+)
+from src.eligibility import (
+    build_member_index,
 )
 from src.validator import (
     build_active_diagnosis_codes,
 )
 from src.workflow_engine import (
-    ClaimIntakeResult,
+    ClaimWorkflowResult,
     process_claim_batch,
 )
 
 
 def print_claim_results(
-    results: list[ClaimIntakeResult],
+    results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print the final Day 3 result for each claim.
+    Print the final Day 4 workflow result for every claim.
     """
-    print("\nClaim Intake Results")
-    print("--------------------")
+    print("\nClaim Workflow Results")
+    print("----------------------")
 
     for result in results:
         print(
@@ -35,14 +39,22 @@ def print_claim_results(
         )
 
         for error in result.validation_errors:
-            print(f"  - {error}")
+            print(
+                f"  Validation: {error}"
+            )
+
+        if result.eligibility_reason is not None:
+            print(
+                f"  Eligibility: "
+                f"{result.eligibility_reason}"
+            )
 
 
 def print_result_totals(
-    results: list[ClaimIntakeResult],
+    results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print totals grouped by final workflow status.
+    Print result totals grouped by final workflow status.
     """
     totals = Counter(
         result.final_status.value
@@ -55,7 +67,9 @@ def print_result_totals(
     for status, count in sorted(
         totals.items()
     ):
-        print(f"{status}: {count}")
+        print(
+            f"{status}: {count}"
+        )
 
 
 def print_database_summary() -> None:
@@ -74,9 +88,9 @@ def print_database_summary() -> None:
         )
 
 
-def print_audit_failures() -> None:
+def print_validation_audit() -> None:
     """
-    Print validation failures retrieved from audit history.
+    Print validation failures from PostgreSQL audit history.
     """
     failures = fetch_validation_failures()
 
@@ -84,7 +98,9 @@ def print_audit_failures() -> None:
     print("--------------------------------")
 
     if not failures:
-        print("No validation failures were recorded.")
+        print(
+            "No validation failures were recorded."
+        )
         return
 
     for failure in failures:
@@ -95,13 +111,42 @@ def print_audit_failures() -> None:
         )
 
         print(
-            f"  Reason: {failure['event_reason']}"
+            f"  Reason: "
+            f"{failure['event_reason']}"
+        )
+
+
+def print_eligibility_audit() -> None:
+    """
+    Print eligibility decisions from PostgreSQL audit history.
+    """
+    decisions = fetch_eligibility_decisions()
+
+    print("\nEligibility Audit History")
+    print("-------------------------")
+
+    if not decisions:
+        print(
+            "No eligibility decisions were recorded."
+        )
+        return
+
+    for decision in decisions:
+        print(
+            f"{decision['claim_id']}: "
+            f"{decision['previous_status']} -> "
+            f"{decision['new_status']}"
+        )
+
+        print(
+            f"  Reason: "
+            f"{decision['event_reason']}"
         )
 
 
 def main() -> None:
     """
-    Run the Day 3 claim-intake and validation workflow.
+    Run the Day 4 claim-validation and eligibility workflow.
     """
     print("Healthcare Claims Workflow")
     print("==========================")
@@ -127,7 +172,9 @@ def main() -> None:
 
     reset_workflow_data()
 
-    print("Workflow tables reset successfully.")
+    print(
+        "Workflow tables reset successfully."
+    )
 
     active_diagnosis_codes = (
         build_active_diagnosis_codes(
@@ -135,9 +182,13 @@ def main() -> None:
         )
     )
 
+    member_index = build_member_index(
+        project_data["members"]
+    )
+
     print(
-        "\nProcessing claims through intake "
-        "and validation..."
+        "\nProcessing claims through intake, "
+        "validation, and eligibility..."
     )
 
     results = process_claim_batch(
@@ -145,6 +196,7 @@ def main() -> None:
         active_diagnosis_codes=(
             active_diagnosis_codes
         ),
+        member_index=member_index,
     )
 
     print_claim_results(
@@ -157,9 +209,13 @@ def main() -> None:
 
     print_database_summary()
 
-    print_audit_failures()
+    print_validation_audit()
 
-    print("\nDay 3 workflow completed successfully.")
+    print_eligibility_audit()
+
+    print(
+        "\nDay 4 workflow completed successfully."
+    )
 
 
 if __name__ == "__main__":

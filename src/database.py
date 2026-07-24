@@ -12,7 +12,9 @@ def get_connection():
     """
     Create and return a PostgreSQL database connection.
     """
-    return psycopg.connect(**DB_CONFIG)
+    return psycopg.connect(
+        **DB_CONFIG
+    )
 
 
 def test_connection() -> str:
@@ -20,7 +22,7 @@ def test_connection() -> str:
     Test the PostgreSQL connection.
 
     Returns:
-        The name of the connected database.
+        The connected PostgreSQL database name.
     """
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -47,7 +49,10 @@ def blank_to_none(
     if value is None:
         return None
 
-    if isinstance(value, str):
+    if isinstance(
+        value,
+        str,
+    ):
         stripped_value = value.strip()
 
         if stripped_value == "":
@@ -64,10 +69,12 @@ def parse_date_or_none(
     """
     Parse an ISO date.
 
-    Invalid or blank values become None so the claim can still be
-    persisted and its validation failure can be audited.
+    Invalid or blank values become None so invalid claims can still be
+    persisted and their validation failures can be audited.
     """
-    cleaned_value = blank_to_none(value)
+    cleaned_value = blank_to_none(
+        value
+    )
 
     if cleaned_value is None:
         return None
@@ -87,10 +94,12 @@ def parse_decimal_or_none(
     """
     Parse a decimal value.
 
-    Invalid or blank values become None so the claim can still be
-    persisted and its validation failure can be audited.
+    Invalid or blank values become None so invalid claims can still be
+    persisted and their validation failures can be audited.
     """
-    cleaned_value = blank_to_none(value)
+    cleaned_value = blank_to_none(
+        value
+    )
 
     if cleaned_value is None:
         return None
@@ -110,12 +119,12 @@ def upsert_claim_record(
     current_status: str,
 ) -> None:
     """
-    Insert a claim or refresh its Day 3 demo record.
+    Insert a claim or reset its local demonstration record.
 
     Args:
         cursor: Active PostgreSQL cursor.
         claim: Raw claim data.
-        current_status: Workflow state to store.
+        current_status: Workflow status to store.
     """
     cursor.execute(
         """
@@ -190,7 +199,7 @@ def update_claim_status(
     new_status: str,
 ) -> None:
     """
-    Update the current workflow state for one claim.
+    Update the current workflow status for one claim.
     """
     cursor.execute(
         """
@@ -216,8 +225,8 @@ def reset_workflow_data() -> None:
     """
     Clear workflow records for repeatable local development runs.
 
-    This is a development helper for the current project phase.
-    It should not be used as a production workflow pattern.
+    This is a local development helper and should not be treated as a
+    production data-management pattern.
     """
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -235,7 +244,7 @@ def reset_workflow_data() -> None:
 
 def fetch_claim_status_summary() -> list[dict[str, Any]]:
     """
-    Return claim totals grouped by current status.
+    Return claim totals grouped by current workflow status.
     """
     with get_connection() as connection:
         with connection.cursor(
@@ -276,7 +285,35 @@ def fetch_validation_failures() -> list[dict[str, Any]]:
                     created_at
                 FROM claim_events
                 WHERE new_status = 'VALIDATION_FAILED'
-                ORDER BY claim_id;
+                ORDER BY claim_id, event_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_eligibility_decisions() -> list[dict[str, Any]]:
+    """
+    Return all audit events created by eligibility processing.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    claim_id,
+                    previous_status,
+                    new_status,
+                    processing_step,
+                    event_reason,
+                    created_at
+                FROM claim_events
+                WHERE processing_step = 'ELIGIBILITY'
+                ORDER BY claim_id, event_id;
                 """
             )
 

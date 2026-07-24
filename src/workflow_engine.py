@@ -7,6 +7,7 @@ from src.database import (
     update_claim_status,
     upsert_claim_record,
 )
+from src.eligibility import evaluate_eligibility
 from src.state_manager import (
     ClaimStatus,
     validate_transition,
@@ -15,14 +16,15 @@ from src.validator import validate_claim
 
 
 @dataclass(frozen=True)
-class ClaimIntakeResult:
+class ClaimWorkflowResult:
     """
-    Result returned after claim intake and validation.
+    Result returned after Day 4 claim processing.
     """
 
     claim_id: str
     final_status: ClaimStatus
     validation_errors: tuple[str, ...]
+    eligibility_reason: str | None
 
 
 def transition_claim(
@@ -34,11 +36,19 @@ def transition_claim(
     event_reason: str,
 ) -> None:
     """
-    Validate, persist, and audit one state transition.
+    Validate, persist, and audit one claim-state transition.
+
+    Args:
+        cursor: Active PostgreSQL cursor.
+        claim_id: Claim being processed.
+        current_status: Claim state before the transition.
+        new_status: Requested next claim state.
+        processing_step: Workflow step responsible for the transition.
+        event_reason: Human-readable explanation for the transition.
 
     Raises:
-        ValueError: If the transition is not allowed.
-        RuntimeError: If the claim cannot be updated.
+        ValueError: If the state transition is not allowed.
+        RuntimeError: If the claim record cannot be updated.
     """
     validate_transition(
         current_status,
@@ -61,12 +71,13 @@ def transition_claim(
     )
 
 
-def process_claim_intake(
+def process_claim(
     claim: dict[str, str],
     active_diagnosis_codes: set[str],
-) -> ClaimIntakeResult:
+    member_index: dict[str, dict[str, str]],
+) -> ClaimWorkflowResult:
     """
-    Process one claim through intake and validation.
+    Process one claim through intake, validation, and eligibility.
 
     Workflow:
 
@@ -74,12 +85,20 @@ def process_claim_intake(
             ↓
         VALIDATING
             ├── VALIDATION_FAILED
-            └── ELIGIBILITY_CHECK
+            ↓
+        ELIGIBILITY_CHECK
+            ├── INELIGIBLE
+            │       ↓
+            │     DENIED
+            ↓
+        DUPLICATE_CHECK
 
-    Valid claims stop at ELIGIBILITY_CHECK because eligibility logic
-    belongs to Day 4.
+    Eligible claims stop at DUPLICATE_CHECK because duplicate
+    detection belongs to Day 5.
 
     Invalid claims stop at VALIDATION_FAILED.
+
+    Ineligible claims stop at DENIED.
     """
     claim_id = claim.get(
         "claim_id",
@@ -88,8 +107,8 @@ def process_claim_intake(
 
     if not claim_id:
         raise ValueError(
-            "Day 3 intake requires a source claim_id "
-            "so the claim can be persisted and audited."
+            "Claim processing requires a claim_id so the "
+            "claim can be persisted and audited."
         )
 
     validation_errors = validate_claim(
@@ -143,7 +162,7 @@ def process_claim_intake(
                     event_reason=failure_reason,
                 )
 
-                return ClaimIntakeResult(
+                return ClaimWorkflowResult(
                     claim_id=claim_id,
                     final_status=(
                         ClaimStatus.VALIDATION_FAILED
@@ -151,6 +170,7 @@ def process_claim_intake(
                     validation_errors=tuple(
                         validation_errors
                     ),
+                    eligibility_reason=None,
                 )
 
             transition_claim(
@@ -162,36 +182,98 @@ def process_claim_intake(
                 ),
                 processing_step="VALIDATION",
                 event_reason=(
-                    "Claim passed validation and is ready "
-                    "for eligibility processing."
+                    "Claim passed validation and entered "
+                    "eligibility processing."
                 ),
             )
 
-    return ClaimIntakeResult(
+            eligibility_decision = evaluate_eligibility(
+                claim,
+                member_index,
+            )
+
+            if not eligibility_decision.is_eligible:
+                transition_claim(
+                    cursor=cursor,
+                    claim_id=claim_id,
+                    current_status=(
+                        ClaimStatus.ELIGIBILITY_CHECK
+                    ),
+                    new_status=ClaimStatus.INELIGIBLE,
+                    processing_step="ELIGIBILITY",
+                    event_reason=(
+                        eligibility_decision.reason
+                    ),
+                )
+
+                transition_claim(
+                    cursor=cursor,
+                    claim_id=claim_id,
+                    current_status=ClaimStatus.INELIGIBLE,
+                    new_status=ClaimStatus.DENIED,
+                    processing_step="ELIGIBILITY",
+                    event_reason=(
+                        "Claim was denied because member "
+                        "eligibility requirements were not met."
+                    ),
+                )
+
+                return ClaimWorkflowResult(
+                    claim_id=claim_id,
+                    final_status=ClaimStatus.DENIED,
+                    validation_errors=(),
+                    eligibility_reason=(
+                        eligibility_decision.reason
+                    ),
+                )
+
+            transition_claim(
+                cursor=cursor,
+                claim_id=claim_id,
+                current_status=(
+                    ClaimStatus.ELIGIBILITY_CHECK
+                ),
+                new_status=ClaimStatus.DUPLICATE_CHECK,
+                processing_step="ELIGIBILITY",
+                event_reason=(
+                    eligibility_decision.reason
+                ),
+            )
+
+    return ClaimWorkflowResult(
         claim_id=claim_id,
-        final_status=ClaimStatus.ELIGIBILITY_CHECK,
+        final_status=ClaimStatus.DUPLICATE_CHECK,
         validation_errors=(),
+        eligibility_reason=(
+            eligibility_decision.reason
+        ),
     )
 
 
 def process_claim_batch(
     claims: list[dict[str, str]],
     active_diagnosis_codes: set[str],
-) -> list[ClaimIntakeResult]:
+    member_index: dict[str, dict[str, str]],
+) -> list[ClaimWorkflowResult]:
     """
-    Process a batch of claims through intake and validation.
+    Process claims through intake, validation, and eligibility.
 
-    Each claim is handled independently so one invalid claim does not
-    stop the remaining batch.
+    Each claim uses its own database transaction so one claim failure
+    does not roll back successfully processed claims.
     """
-    results: list[ClaimIntakeResult] = []
+    results: list[ClaimWorkflowResult] = []
 
     for claim in claims:
-        result = process_claim_intake(
-            claim,
-            active_diagnosis_codes,
+        result = process_claim(
+            claim=claim,
+            active_diagnosis_codes=(
+                active_diagnosis_codes
+            ),
+            member_index=member_index,
         )
 
-        results.append(result)
+        results.append(
+            result
+        )
 
     return results
