@@ -221,6 +221,96 @@ def update_claim_status(
         )
 
 
+def find_prior_duplicate_claim_id(
+    cursor: Any,
+    claim: dict[str, str],
+) -> str | None:
+    """
+    Find a previously processed claim matching the duplicate key.
+
+    The initial duplicate rule compares:
+
+    - member_id
+    - provider_id
+    - procedure_code
+    - service_date
+
+    Only claims that passed validation and eligibility and reached
+    duplicate processing or a later supported state are considered.
+
+    Args:
+        cursor: Active PostgreSQL cursor.
+        claim: Claim currently being evaluated.
+
+    Returns:
+        The matching prior claim ID, or None when no match exists.
+    """
+    claim_id = claim.get(
+        "claim_id",
+        "",
+    ).strip()
+
+    member_id = claim.get(
+        "member_id",
+        "",
+    ).strip()
+
+    provider_id = claim.get(
+        "provider_id",
+        "",
+    ).strip()
+
+    procedure_code = claim.get(
+        "procedure_code",
+        "",
+    ).strip()
+
+    service_date = parse_date_or_none(
+        claim.get(
+            "service_date"
+        )
+    )
+
+    cursor.execute(
+        """
+        SELECT
+            claim_id
+        FROM claims
+        WHERE claim_id <> %s
+          AND member_id = %s
+          AND provider_id = %s
+          AND procedure_code = %s
+          AND service_date = %s
+          AND current_status IN (
+              'DUPLICATE_CHECK',
+              'PRICING',
+              'PRICING_RETRY',
+              'FRAUD_REVIEW',
+              'MANUAL_REVIEW',
+              'APPROVED'
+          )
+        ORDER BY
+            created_at,
+            claim_id
+        LIMIT 1;
+        """,
+        (
+            claim_id,
+            member_id,
+            provider_id,
+            procedure_code,
+            service_date,
+        ),
+    )
+
+    result = cursor.fetchone()
+
+    if result is None:
+        return None
+
+    return result[0]
+
+
 def reset_workflow_data() -> None:
     """
     Clear workflow records for repeatable local development runs.
@@ -313,6 +403,34 @@ def fetch_eligibility_decisions() -> list[dict[str, Any]]:
                     created_at
                 FROM claim_events
                 WHERE processing_step = 'ELIGIBILITY'
+                ORDER BY claim_id, event_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_duplicate_decisions() -> list[dict[str, Any]]:
+    """
+    Return all audit events created by duplicate processing.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    claim_id,
+                    previous_status,
+                    new_status,
+                    processing_step,
+                    event_reason,
+                    created_at
+                FROM claim_events
+                WHERE processing_step = 'DUPLICATE_CHECK'
                 ORDER BY claim_id, event_id;
                 """
             )

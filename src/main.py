@@ -6,6 +6,7 @@ from src.claim_loader import (
 )
 from src.database import (
     fetch_claim_status_summary,
+    fetch_duplicate_decisions,
     fetch_eligibility_decisions,
     fetch_validation_failures,
     reset_workflow_data,
@@ -27,7 +28,7 @@ def print_claim_results(
     results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print the final Day 4 workflow result for every claim.
+    Print the final Day 5 workflow result for every claim.
     """
     print("\nClaim Workflow Results")
     print("----------------------")
@@ -47,6 +48,18 @@ def print_claim_results(
             print(
                 f"  Eligibility: "
                 f"{result.eligibility_reason}"
+            )
+
+        if result.duplicate_reason is not None:
+            print(
+                f"  Duplicate check: "
+                f"{result.duplicate_reason}"
+            )
+
+        if result.duplicate_of_claim_id is not None:
+            print(
+                f"  Duplicate of: "
+                f"{result.duplicate_of_claim_id}"
             )
 
 
@@ -144,9 +157,37 @@ def print_eligibility_audit() -> None:
         )
 
 
+def print_duplicate_audit() -> None:
+    """
+    Print duplicate decisions from PostgreSQL audit history.
+    """
+    decisions = fetch_duplicate_decisions()
+
+    print("\nDuplicate Check Audit History")
+    print("-----------------------------")
+
+    if not decisions:
+        print(
+            "No duplicate decisions were recorded."
+        )
+        return
+
+    for decision in decisions:
+        print(
+            f"{decision['claim_id']}: "
+            f"{decision['previous_status']} -> "
+            f"{decision['new_status']}"
+        )
+
+        print(
+            f"  Reason: "
+            f"{decision['event_reason']}"
+        )
+
+
 def main() -> None:
     """
-    Run the Day 4 claim-validation and eligibility workflow.
+    Run the Day 5 claims workflow.
     """
     print("Healthcare Claims Workflow")
     print("==========================")
@@ -188,7 +229,8 @@ def main() -> None:
 
     print(
         "\nProcessing claims through intake, "
-        "validation, and eligibility..."
+        "validation, eligibility, and "
+        "duplicate detection..."
     )
 
     results = process_claim_batch(
@@ -213,8 +255,10 @@ def main() -> None:
 
     print_eligibility_audit()
 
+    print_duplicate_audit()
+
     print(
-        "\nDay 4 workflow completed successfully."
+        "\nDay 5 workflow completed successfully."
     )
 
 

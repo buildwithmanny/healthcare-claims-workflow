@@ -3,9 +3,13 @@ from typing import Any
 
 from src.audit_logger import insert_claim_event
 from src.database import (
+    find_prior_duplicate_claim_id,
     get_connection,
     update_claim_status,
     upsert_claim_record,
+)
+from src.duplicate_checker import (
+    evaluate_duplicate,
 )
 from src.eligibility import evaluate_eligibility
 from src.state_manager import (
@@ -18,13 +22,15 @@ from src.validator import validate_claim
 @dataclass(frozen=True)
 class ClaimWorkflowResult:
     """
-    Result returned after Day 4 claim processing.
+    Result returned after Day 5 claim processing.
     """
 
     claim_id: str
     final_status: ClaimStatus
     validation_errors: tuple[str, ...]
     eligibility_reason: str | None
+    duplicate_reason: str | None
+    duplicate_of_claim_id: str | None
 
 
 def transition_claim(
@@ -77,7 +83,8 @@ def process_claim(
     member_index: dict[str, dict[str, str]],
 ) -> ClaimWorkflowResult:
     """
-    Process one claim through intake, validation, and eligibility.
+    Process one claim through validation, eligibility, and duplicate
+    detection.
 
     Workflow:
 
@@ -92,13 +99,14 @@ def process_claim(
             │     DENIED
             ↓
         DUPLICATE_CHECK
+            ├── DUPLICATE
+            ↓
+        PRICING
 
-    Eligible claims stop at DUPLICATE_CHECK because duplicate
-    detection belongs to Day 5.
+    Unique eligible claims stop at PRICING because pricing logic
+    belongs to Day 6.
 
-    Invalid claims stop at VALIDATION_FAILED.
-
-    Ineligible claims stop at DENIED.
+    Duplicate claims stop at DUPLICATE.
     """
     claim_id = claim.get(
         "claim_id",
@@ -171,6 +179,8 @@ def process_claim(
                         validation_errors
                     ),
                     eligibility_reason=None,
+                    duplicate_reason=None,
+                    duplicate_of_claim_id=None,
                 )
 
             transition_claim(
@@ -225,6 +235,8 @@ def process_claim(
                     eligibility_reason=(
                         eligibility_decision.reason
                     ),
+                    duplicate_reason=None,
+                    duplicate_of_claim_id=None,
                 )
 
             transition_claim(
@@ -240,13 +252,71 @@ def process_claim(
                 ),
             )
 
+            matched_claim_id = (
+                find_prior_duplicate_claim_id(
+                    cursor,
+                    claim,
+                )
+            )
+
+            duplicate_decision = evaluate_duplicate(
+                claim,
+                matched_claim_id,
+            )
+
+            if duplicate_decision.is_duplicate:
+                transition_claim(
+                    cursor=cursor,
+                    claim_id=claim_id,
+                    current_status=(
+                        ClaimStatus.DUPLICATE_CHECK
+                    ),
+                    new_status=ClaimStatus.DUPLICATE,
+                    processing_step="DUPLICATE_CHECK",
+                    event_reason=(
+                        duplicate_decision.reason
+                    ),
+                )
+
+                return ClaimWorkflowResult(
+                    claim_id=claim_id,
+                    final_status=ClaimStatus.DUPLICATE,
+                    validation_errors=(),
+                    eligibility_reason=(
+                        eligibility_decision.reason
+                    ),
+                    duplicate_reason=(
+                        duplicate_decision.reason
+                    ),
+                    duplicate_of_claim_id=(
+                        duplicate_decision.matched_claim_id
+                    ),
+                )
+
+            transition_claim(
+                cursor=cursor,
+                claim_id=claim_id,
+                current_status=(
+                    ClaimStatus.DUPLICATE_CHECK
+                ),
+                new_status=ClaimStatus.PRICING,
+                processing_step="DUPLICATE_CHECK",
+                event_reason=(
+                    duplicate_decision.reason
+                ),
+            )
+
     return ClaimWorkflowResult(
         claim_id=claim_id,
-        final_status=ClaimStatus.DUPLICATE_CHECK,
+        final_status=ClaimStatus.PRICING,
         validation_errors=(),
         eligibility_reason=(
             eligibility_decision.reason
         ),
+        duplicate_reason=(
+            duplicate_decision.reason
+        ),
+        duplicate_of_claim_id=None,
     )
 
 
@@ -256,10 +326,13 @@ def process_claim_batch(
     member_index: dict[str, dict[str, str]],
 ) -> list[ClaimWorkflowResult]:
     """
-    Process claims through intake, validation, and eligibility.
+    Process claims through intake, validation, eligibility, and
+    duplicate detection.
 
-    Each claim uses its own database transaction so one claim failure
-    does not roll back successfully processed claims.
+    Claims are processed in source-file order.
+
+    This allows a later claim to be compared with previously processed
+    claims from the same batch.
     """
     results: list[ClaimWorkflowResult] = []
 
