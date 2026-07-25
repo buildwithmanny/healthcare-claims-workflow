@@ -1,4 +1,5 @@
 from collections import Counter
+from pathlib import Path
 
 from src.claim_loader import (
     load_project_data,
@@ -8,6 +9,7 @@ from src.database import (
     fetch_claim_status_summary,
     fetch_duplicate_decisions,
     fetch_eligibility_decisions,
+    fetch_fraud_review_decisions,
     fetch_priced_claims,
     fetch_pricing_decisions,
     fetch_validation_failures,
@@ -17,9 +19,13 @@ from src.database import (
 from src.eligibility import (
     build_member_index,
 )
+from src.fraud_review import (
+    build_fraud_review_rules,
+)
 from src.pricing import (
     build_pricing_rule_index,
 )
+from src.reporting import generate_reports
 from src.validator import (
     build_active_diagnosis_codes,
 )
@@ -33,7 +39,7 @@ def print_claim_results(
     results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print the final Day 6 workflow result for every claim.
+    Print the final Version 1 outcome for every claim.
     """
     print("\nClaim Workflow Results")
     print("----------------------")
@@ -85,12 +91,24 @@ def print_claim_results(
                 f"${result.allowed_amount:,.2f}"
             )
 
+        if result.fraud_review_outcome is not None:
+            print(
+                f"  Fraud review outcome: "
+                f"{result.fraud_review_outcome.value}"
+            )
+
+        if result.fraud_review_reason is not None:
+            print(
+                f"  Fraud review: "
+                f"{result.fraud_review_reason}"
+            )
+
 
 def print_result_totals(
     results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print result totals grouped by final workflow status.
+    Print final-status totals.
     """
     totals = Counter(
         result.final_status.value
@@ -110,7 +128,7 @@ def print_result_totals(
 
 def print_database_summary() -> None:
     """
-    Print claim totals stored in PostgreSQL.
+    Print current PostgreSQL status totals.
     """
     summary = fetch_claim_status_summary()
 
@@ -124,102 +142,26 @@ def print_database_summary() -> None:
         )
 
 
-def print_validation_audit() -> None:
+def print_audit_section(
+    title: str,
+    decisions: list[dict],
+) -> None:
     """
-    Print validation failures from PostgreSQL audit history.
+    Print one collection of workflow audit events.
     """
-    failures = fetch_validation_failures()
+    print(
+        f"\n{title}"
+    )
 
-    print("\nValidation Failure Audit History")
-    print("--------------------------------")
-
-    if not failures:
-        print(
-            "No validation failures were recorded."
+    print(
+        "-" * len(
+            title
         )
-        return
-
-    for failure in failures:
-        print(
-            f"{failure['claim_id']}: "
-            f"{failure['previous_status']} -> "
-            f"{failure['new_status']}"
-        )
-
-        print(
-            f"  Reason: "
-            f"{failure['event_reason']}"
-        )
-
-
-def print_eligibility_audit() -> None:
-    """
-    Print eligibility decisions from PostgreSQL audit history.
-    """
-    decisions = fetch_eligibility_decisions()
-
-    print("\nEligibility Audit History")
-    print("-------------------------")
+    )
 
     if not decisions:
         print(
-            "No eligibility decisions were recorded."
-        )
-        return
-
-    for decision in decisions:
-        print(
-            f"{decision['claim_id']}: "
-            f"{decision['previous_status']} -> "
-            f"{decision['new_status']}"
-        )
-
-        print(
-            f"  Reason: "
-            f"{decision['event_reason']}"
-        )
-
-
-def print_duplicate_audit() -> None:
-    """
-    Print duplicate decisions from PostgreSQL audit history.
-    """
-    decisions = fetch_duplicate_decisions()
-
-    print("\nDuplicate Check Audit History")
-    print("-----------------------------")
-
-    if not decisions:
-        print(
-            "No duplicate decisions were recorded."
-        )
-        return
-
-    for decision in decisions:
-        print(
-            f"{decision['claim_id']}: "
-            f"{decision['previous_status']} -> "
-            f"{decision['new_status']}"
-        )
-
-        print(
-            f"  Reason: "
-            f"{decision['event_reason']}"
-        )
-
-
-def print_pricing_audit() -> None:
-    """
-    Print pricing decisions from PostgreSQL audit history.
-    """
-    decisions = fetch_pricing_decisions()
-
-    print("\nPricing Audit History")
-    print("---------------------")
-
-    if not decisions:
-        print(
-            "No pricing decisions were recorded."
+            "No matching audit events were recorded."
         )
         return
 
@@ -273,9 +215,27 @@ def print_priced_claims() -> None:
         )
 
 
+def print_generated_reports(
+    report_paths: dict[str, Path],
+) -> None:
+    """
+    Print all generated report locations.
+    """
+    print("\nGenerated Reports")
+    print("-----------------")
+
+    for report_name, report_path in (
+        report_paths.items()
+    ):
+        print(
+            f"{report_name}: "
+            f"{report_path}"
+        )
+
+
 def main() -> None:
     """
-    Run the Day 6 claims workflow.
+    Run the complete Version 1 healthcare claims workflow.
     """
     print("Healthcare Claims Workflow")
     print("==========================")
@@ -319,10 +279,13 @@ def main() -> None:
         project_data["pricing_rules"]
     )
 
+    fraud_review_rules = build_fraud_review_rules(
+        project_data["review_rules"]
+    )
+
     print(
-        "\nProcessing claims through intake, "
-        "validation, eligibility, duplicate "
-        "detection, and pricing..."
+        "\nProcessing claims through the complete "
+        "Version 1 workflow..."
     )
 
     results = process_claim_batch(
@@ -334,7 +297,12 @@ def main() -> None:
         pricing_rule_index=(
             pricing_rule_index
         ),
+        fraud_review_rules=(
+            fraud_review_rules
+        ),
     )
+
+    report_paths = generate_reports()
 
     print_claim_results(
         results
@@ -346,18 +314,39 @@ def main() -> None:
 
     print_database_summary()
 
-    print_validation_audit()
+    print_audit_section(
+        "Validation Failure Audit History",
+        fetch_validation_failures(),
+    )
 
-    print_eligibility_audit()
+    print_audit_section(
+        "Eligibility Audit History",
+        fetch_eligibility_decisions(),
+    )
 
-    print_duplicate_audit()
+    print_audit_section(
+        "Duplicate Check Audit History",
+        fetch_duplicate_decisions(),
+    )
 
-    print_pricing_audit()
+    print_audit_section(
+        "Pricing Audit History",
+        fetch_pricing_decisions(),
+    )
+
+    print_audit_section(
+        "Fraud Review Audit History",
+        fetch_fraud_review_decisions(),
+    )
 
     print_priced_claims()
 
+    print_generated_reports(
+        report_paths
+    )
+
     print(
-        "\nDay 6 workflow completed successfully."
+        "\nVersion 1 workflow completed successfully."
     )
 
 

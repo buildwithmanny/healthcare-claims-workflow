@@ -1,0 +1,14 @@
+{
+    "version": "1.0",
+    "total_claims": 16,
+    "approved_claims": 4,
+    "approval_rate_percent": 25.0,
+    "status_counts": {
+        "APPROVED": 4,
+        "DENIED": 3,
+        "DUPLICATE": 1,
+        "MANUAL_REVIEW": 2,
+        "PRICING_RETRY": 1,
+        "VALIDATION_FAILED": 5
+    }
+}

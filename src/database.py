@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -228,11 +228,6 @@ def update_claim_allowed_amount(
 ) -> None:
     """
     Store the successful pricing result for one claim.
-
-    Args:
-        cursor: Active PostgreSQL cursor.
-        claim_id: Claim receiving the pricing result.
-        allowed_amount: Positive synthetic allowed amount.
     """
     cursor.execute(
         """
@@ -250,7 +245,7 @@ def update_claim_allowed_amount(
 
     if cursor.rowcount != 1:
         raise RuntimeError(
-            f"Allowed amount could not be stored for "
+            "Allowed amount could not be stored for "
             f"claim '{claim_id}'."
         )
 
@@ -268,9 +263,6 @@ def find_prior_duplicate_claim_id(
     - provider_id
     - procedure_code
     - service_date
-
-    Only claims that reached duplicate processing or a later supported
-    workflow state are considered.
     """
     claim_id = claim.get(
         "claim_id",
@@ -336,6 +328,79 @@ def find_prior_duplicate_claim_id(
         return None
 
     return result[0]
+
+
+def count_prior_member_claims(
+    cursor: Any,
+    claim: dict[str, str],
+    period_days: int,
+) -> int:
+    """
+    Count qualifying prior claims for the same member.
+
+    The current claim is excluded.
+
+    Only claims that reached pricing or a later operational state are
+    included in the frequency calculation.
+    """
+    claim_id = claim.get(
+        "claim_id",
+        "",
+    ).strip()
+
+    member_id = claim.get(
+        "member_id",
+        "",
+    ).strip()
+
+    service_date = parse_date_or_none(
+        claim.get(
+            "service_date"
+        )
+    )
+
+    if service_date is None:
+        return 0
+
+    period_start = (
+        service_date
+        - timedelta(
+            days=period_days
+        )
+    )
+
+    cursor.execute(
+        """
+        SELECT
+            COUNT(*)
+        FROM claims
+        WHERE claim_id <> %s
+          AND member_id = %s
+          AND service_date BETWEEN %s AND %s
+          AND current_status IN (
+              'PRICING',
+              'PRICING_RETRY',
+              'FRAUD_REVIEW',
+              'MANUAL_REVIEW',
+              'APPROVED'
+          );
+        """,
+        (
+            claim_id,
+            member_id,
+            period_start,
+            service_date,
+        ),
+    )
+
+    result = cursor.fetchone()
+
+    if result is None:
+        return 0
+
+    return int(
+        result[0]
+    )
 
 
 def reset_workflow_data() -> None:
@@ -495,6 +560,34 @@ def fetch_pricing_decisions() -> list[dict[str, Any]]:
             )
 
 
+def fetch_fraud_review_decisions() -> list[dict[str, Any]]:
+    """
+    Return all audit events created by fraud-review processing.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    claim_id,
+                    previous_status,
+                    new_status,
+                    processing_step,
+                    event_reason,
+                    created_at
+                FROM claim_events
+                WHERE processing_step = 'FRAUD_REVIEW'
+                ORDER BY claim_id, event_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
 def fetch_priced_claims() -> list[dict[str, Any]]:
     """
     Return claims that received a successful allowed amount.
@@ -513,6 +606,74 @@ def fetch_priced_claims() -> list[dict[str, Any]]:
                     current_status
                 FROM claims
                 WHERE allowed_amount IS NOT NULL
+                ORDER BY claim_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_claim_report_rows() -> list[dict[str, Any]]:
+    """
+    Return all claims for the claim-summary report.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    claim_id,
+                    member_id,
+                    provider_id,
+                    diagnosis_code,
+                    procedure_code,
+                    service_date,
+                    billed_amount,
+                    allowed_amount,
+                    submitted_date,
+                    current_status
+                FROM claims
+                ORDER BY claim_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_exception_report_rows() -> list[dict[str, Any]]:
+    """
+    Return claims that did not reach automatic approval.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    claim_id,
+                    member_id,
+                    provider_id,
+                    procedure_code,
+                    service_date,
+                    billed_amount,
+                    allowed_amount,
+                    current_status
+                FROM claims
+                WHERE current_status IN (
+                    'VALIDATION_FAILED',
+                    'DENIED',
+                    'DUPLICATE',
+                    'PRICING_RETRY',
+                    'MANUAL_REVIEW',
+                    'FAILED'
+                )
                 ORDER BY claim_id;
                 """
             )

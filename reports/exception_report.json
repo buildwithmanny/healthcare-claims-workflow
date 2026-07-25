@@ -1,0 +1,126 @@
+{
+    "version": "1.0",
+    "exception_count": 12,
+    "claims": [
+        {
+            "claim_id": "CLM002",
+            "member_id": "M002",
+            "provider_id": "PRV002",
+            "procedure_code": "PROC1002",
+            "service_date": "2026-07-03",
+            "billed_amount": "350.00",
+            "allowed_amount": null,
+            "current_status": "DENIED"
+        },
+        {
+            "claim_id": "CLM003",
+            "member_id": "M003",
+            "provider_id": "PRV001",
+            "procedure_code": "PROC1003",
+            "service_date": "2026-07-05",
+            "billed_amount": "725.00",
+            "allowed_amount": null,
+            "current_status": "DENIED"
+        },
+        {
+            "claim_id": "CLM007",
+            "member_id": null,
+            "provider_id": "PRV001",
+            "procedure_code": "PROC1001",
+            "service_date": "2026-07-13",
+            "billed_amount": "175.00",
+            "allowed_amount": null,
+            "current_status": "VALIDATION_FAILED"
+        },
+        {
+            "claim_id": "CLM008",
+            "member_id": "M002",
+            "provider_id": "PRV002",
+            "procedure_code": "PROC1002",
+            "service_date": "2026-07-15",
+            "billed_amount": "325.00",
+            "allowed_amount": null,
+            "current_status": "VALIDATION_FAILED"
+        },
+        {
+            "claim_id": "CLM009",
+            "member_id": "M003",
+            "provider_id": "PRV003",
+            "procedure_code": null,
+            "service_date": "2026-07-17",
+            "billed_amount": "500.00",
+            "allowed_amount": null,
+            "current_status": "VALIDATION_FAILED"
+        },
+        {
+            "claim_id": "CLM010",
+            "member_id": "M004",
+            "provider_id": "PRV004",
+            "procedure_code": "PROC1004",
+            "service_date": null,
+            "billed_amount": "800.00",
+            "allowed_amount": null,
+            "current_status": "VALIDATION_FAILED"
+        },
+        {
+            "claim_id": "CLM011",
+            "member_id": "M005",
+            "provider_id": "PRV005",
+            "procedure_code": "PROC1001",
+            "service_date": "2026-07-21",
+            "billed_amount": "0.00",
+            "allowed_amount": null,
+            "current_status": "VALIDATION_FAILED"
+        },
+        {
+            "claim_id": "CLM012",
+            "member_id": "M999",
+            "provider_id": "PRV006",
+            "procedure_code": "PROC1001",
+            "service_date": "2026-07-23",
+            "billed_amount": "225.00",
+            "allowed_amount": null,
+            "current_status": "DENIED"
+        },
+        {
+            "claim_id": "CLM013",
+            "member_id": "M001",
+            "provider_id": "PRV001",
+            "procedure_code": "PROC1001",
+            "service_date": "2026-07-01",
+            "billed_amount": "185.00",
+            "allowed_amount": null,
+            "current_status": "DUPLICATE"
+        },
+        {
+            "claim_id": "CLM014",
+            "member_id": "M004",
+            "provider_id": "PRV007",
+            "procedure_code": "PROC9999",
+            "service_date": "2026-07-22",
+            "billed_amount": "650.00",
+            "allowed_amount": null,
+            "current_status": "MANUAL_REVIEW"
+        },
+        {
+            "claim_id": "CLM015",
+            "member_id": "M005",
+            "provider_id": "PRV008",
+            "procedure_code": "PROC1005",
+            "service_date": "2026-07-23",
+            "billed_amount": "700.00",
+            "allowed_amount": null,
+            "current_status": "PRICING_RETRY"
+        },
+        {
+            "claim_id": "CLM016",
+            "member_id": "M004",
+            "provider_id": "PRV009",
+            "procedure_code": "PROC1003",
+            "service_date": "2026-07-24",
+            "billed_amount": "1500.00",
+            "allowed_amount": "600.00",
+            "current_status": "MANUAL_REVIEW"
+        }
+    ]
+}

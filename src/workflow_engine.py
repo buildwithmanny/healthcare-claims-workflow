@@ -4,6 +4,7 @@ from typing import Any
 
 from src.audit_logger import insert_claim_event
 from src.database import (
+    count_prior_member_claims,
     find_prior_duplicate_claim_id,
     get_connection,
     update_claim_allowed_amount,
@@ -14,6 +15,11 @@ from src.duplicate_checker import (
     evaluate_duplicate,
 )
 from src.eligibility import evaluate_eligibility
+from src.fraud_review import (
+    FraudReviewOutcome,
+    FraudReviewRules,
+    evaluate_fraud_review,
+)
 from src.pricing import (
     PricingOutcome,
     evaluate_pricing,
@@ -28,7 +34,7 @@ from src.validator import validate_claim
 @dataclass(frozen=True)
 class ClaimWorkflowResult:
     """
-    Result returned after Day 6 claim processing.
+    Result returned after Version 1 claim processing.
     """
 
     claim_id: str
@@ -40,6 +46,8 @@ class ClaimWorkflowResult:
     pricing_outcome: PricingOutcome | None
     pricing_reason: str | None
     allowed_amount: Decimal | None
+    fraud_review_outcome: FraudReviewOutcome | None
+    fraud_review_reason: str | None
 
 
 def transition_claim(
@@ -52,18 +60,6 @@ def transition_claim(
 ) -> None:
     """
     Validate, persist, and audit one claim-state transition.
-
-    Args:
-        cursor: Active PostgreSQL cursor.
-        claim_id: Claim being processed.
-        current_status: Claim state before the transition.
-        new_status: Requested next claim state.
-        processing_step: Workflow step responsible for the transition.
-        event_reason: Human-readable explanation for the transition.
-
-    Raises:
-        ValueError: If the state transition is not allowed.
-        RuntimeError: If the claim record cannot be updated.
     """
     validate_transition(
         current_status,
@@ -86,30 +82,62 @@ def transition_claim(
     )
 
 
+def build_result(
+    claim_id: str,
+    final_status: ClaimStatus,
+    validation_errors: tuple[str, ...] = (),
+    eligibility_reason: str | None = None,
+    duplicate_reason: str | None = None,
+    duplicate_of_claim_id: str | None = None,
+    pricing_outcome: PricingOutcome | None = None,
+    pricing_reason: str | None = None,
+    allowed_amount: Decimal | None = None,
+    fraud_review_outcome: FraudReviewOutcome | None = None,
+    fraud_review_reason: str | None = None,
+) -> ClaimWorkflowResult:
+    """
+    Build a consistently structured workflow result.
+    """
+    return ClaimWorkflowResult(
+        claim_id=claim_id,
+        final_status=final_status,
+        validation_errors=validation_errors,
+        eligibility_reason=eligibility_reason,
+        duplicate_reason=duplicate_reason,
+        duplicate_of_claim_id=duplicate_of_claim_id,
+        pricing_outcome=pricing_outcome,
+        pricing_reason=pricing_reason,
+        allowed_amount=allowed_amount,
+        fraud_review_outcome=fraud_review_outcome,
+        fraud_review_reason=fraud_review_reason,
+    )
+
+
 def process_claim(
     claim: dict[str, str],
     active_diagnosis_codes: set[str],
     member_index: dict[str, dict[str, str]],
     pricing_rule_index: dict[str, dict[str, Any]],
+    fraud_review_rules: FraudReviewRules,
 ) -> ClaimWorkflowResult:
     """
-    Process one claim through validation, eligibility, duplicate
-    detection, and pricing.
+    Process one claim through the complete Version 1 workflow.
 
-    Successful pricing:
-        PRICING -> FRAUD_REVIEW
+    Happy path:
 
-    Temporary pricing failure:
-        PRICING -> PRICING_RETRY
-
-    Permanent pricing failure:
-        PRICING -> MANUAL_REVIEW
-
-    Fraud-review processing belongs to Day 7.
-
-    Retry-queue persistence belongs to Day 9.
-
-    Manual-review-queue persistence belongs to Day 10.
+        RECEIVED
+            ↓
+        VALIDATING
+            ↓
+        ELIGIBILITY_CHECK
+            ↓
+        DUPLICATE_CHECK
+            ↓
+        PRICING
+            ↓
+        FRAUD_REVIEW
+            ↓
+        APPROVED
     """
     claim_id = claim.get(
         "claim_id",
@@ -173,7 +201,7 @@ def process_claim(
                     event_reason=failure_reason,
                 )
 
-                return ClaimWorkflowResult(
+                return build_result(
                     claim_id=claim_id,
                     final_status=(
                         ClaimStatus.VALIDATION_FAILED
@@ -181,12 +209,6 @@ def process_claim(
                     validation_errors=tuple(
                         validation_errors
                     ),
-                    eligibility_reason=None,
-                    duplicate_reason=None,
-                    duplicate_of_claim_id=None,
-                    pricing_outcome=None,
-                    pricing_reason=None,
-                    allowed_amount=None,
                 )
 
             transition_claim(
@@ -234,18 +256,12 @@ def process_claim(
                     ),
                 )
 
-                return ClaimWorkflowResult(
+                return build_result(
                     claim_id=claim_id,
                     final_status=ClaimStatus.DENIED,
-                    validation_errors=(),
                     eligibility_reason=(
                         eligibility_decision.reason
                     ),
-                    duplicate_reason=None,
-                    duplicate_of_claim_id=None,
-                    pricing_outcome=None,
-                    pricing_reason=None,
-                    allowed_amount=None,
                 )
 
             transition_claim(
@@ -287,10 +303,9 @@ def process_claim(
                     ),
                 )
 
-                return ClaimWorkflowResult(
+                return build_result(
                     claim_id=claim_id,
                     final_status=ClaimStatus.DUPLICATE,
-                    validation_errors=(),
                     eligibility_reason=(
                         eligibility_decision.reason
                     ),
@@ -300,9 +315,6 @@ def process_claim(
                     duplicate_of_claim_id=(
                         duplicate_decision.matched_claim_id
                     ),
-                    pricing_outcome=None,
-                    pricing_reason=None,
-                    allowed_amount=None,
                 )
 
             transition_claim(
@@ -325,58 +337,6 @@ def process_claim(
 
             if (
                 pricing_decision.outcome
-                == PricingOutcome.SUCCESS
-            ):
-                if pricing_decision.allowed_amount is None:
-                    raise RuntimeError(
-                        "Successful pricing did not return "
-                        f"an allowed amount for claim "
-                        f"'{claim_id}'."
-                    )
-
-                update_claim_allowed_amount(
-                    cursor=cursor,
-                    claim_id=claim_id,
-                    allowed_amount=(
-                        pricing_decision.allowed_amount
-                    ),
-                )
-
-                transition_claim(
-                    cursor=cursor,
-                    claim_id=claim_id,
-                    current_status=ClaimStatus.PRICING,
-                    new_status=ClaimStatus.FRAUD_REVIEW,
-                    processing_step="PRICING",
-                    event_reason=(
-                        pricing_decision.reason
-                    ),
-                )
-
-                return ClaimWorkflowResult(
-                    claim_id=claim_id,
-                    final_status=ClaimStatus.FRAUD_REVIEW,
-                    validation_errors=(),
-                    eligibility_reason=(
-                        eligibility_decision.reason
-                    ),
-                    duplicate_reason=(
-                        duplicate_decision.reason
-                    ),
-                    duplicate_of_claim_id=None,
-                    pricing_outcome=(
-                        pricing_decision.outcome
-                    ),
-                    pricing_reason=(
-                        pricing_decision.reason
-                    ),
-                    allowed_amount=(
-                        pricing_decision.allowed_amount
-                    ),
-                )
-
-            if (
-                pricing_decision.outcome
                 == PricingOutcome.TEMPORARY_FAILURE
             ):
                 transition_claim(
@@ -390,55 +350,176 @@ def process_claim(
                     ),
                 )
 
-                return ClaimWorkflowResult(
+                return build_result(
                     claim_id=claim_id,
                     final_status=ClaimStatus.PRICING_RETRY,
-                    validation_errors=(),
                     eligibility_reason=(
                         eligibility_decision.reason
                     ),
                     duplicate_reason=(
                         duplicate_decision.reason
                     ),
-                    duplicate_of_claim_id=None,
                     pricing_outcome=(
                         pricing_decision.outcome
                     ),
                     pricing_reason=(
                         pricing_decision.reason
                     ),
-                    allowed_amount=None,
                 )
+
+            if (
+                pricing_decision.outcome
+                == PricingOutcome.PERMANENT_FAILURE
+            ):
+                transition_claim(
+                    cursor=cursor,
+                    claim_id=claim_id,
+                    current_status=ClaimStatus.PRICING,
+                    new_status=ClaimStatus.MANUAL_REVIEW,
+                    processing_step="PRICING",
+                    event_reason=(
+                        pricing_decision.reason
+                    ),
+                )
+
+                return build_result(
+                    claim_id=claim_id,
+                    final_status=ClaimStatus.MANUAL_REVIEW,
+                    eligibility_reason=(
+                        eligibility_decision.reason
+                    ),
+                    duplicate_reason=(
+                        duplicate_decision.reason
+                    ),
+                    pricing_outcome=(
+                        pricing_decision.outcome
+                    ),
+                    pricing_reason=(
+                        pricing_decision.reason
+                    ),
+                )
+
+            if pricing_decision.allowed_amount is None:
+                raise RuntimeError(
+                    "Successful pricing did not return an "
+                    f"allowed amount for claim '{claim_id}'."
+                )
+
+            update_claim_allowed_amount(
+                cursor=cursor,
+                claim_id=claim_id,
+                allowed_amount=(
+                    pricing_decision.allowed_amount
+                ),
+            )
 
             transition_claim(
                 cursor=cursor,
                 claim_id=claim_id,
                 current_status=ClaimStatus.PRICING,
-                new_status=ClaimStatus.MANUAL_REVIEW,
+                new_status=ClaimStatus.FRAUD_REVIEW,
                 processing_step="PRICING",
                 event_reason=(
                     pricing_decision.reason
                 ),
             )
 
-            return ClaimWorkflowResult(
+            prior_claim_count = (
+                count_prior_member_claims(
+                    cursor=cursor,
+                    claim=claim,
+                    period_days=(
+                        fraud_review_rules.period_days
+                    ),
+                )
+            )
+
+            fraud_review_decision = (
+                evaluate_fraud_review(
+                    claim=claim,
+                    rules=fraud_review_rules,
+                    prior_claim_count=(
+                        prior_claim_count
+                    ),
+                )
+            )
+
+            if (
+                fraud_review_decision.outcome
+                == FraudReviewOutcome.MANUAL_REVIEW
+            ):
+                transition_claim(
+                    cursor=cursor,
+                    claim_id=claim_id,
+                    current_status=ClaimStatus.FRAUD_REVIEW,
+                    new_status=ClaimStatus.MANUAL_REVIEW,
+                    processing_step="FRAUD_REVIEW",
+                    event_reason=(
+                        fraud_review_decision.reason
+                    ),
+                )
+
+                return build_result(
+                    claim_id=claim_id,
+                    final_status=ClaimStatus.MANUAL_REVIEW,
+                    eligibility_reason=(
+                        eligibility_decision.reason
+                    ),
+                    duplicate_reason=(
+                        duplicate_decision.reason
+                    ),
+                    pricing_outcome=(
+                        pricing_decision.outcome
+                    ),
+                    pricing_reason=(
+                        pricing_decision.reason
+                    ),
+                    allowed_amount=(
+                        pricing_decision.allowed_amount
+                    ),
+                    fraud_review_outcome=(
+                        fraud_review_decision.outcome
+                    ),
+                    fraud_review_reason=(
+                        fraud_review_decision.reason
+                    ),
+                )
+
+            transition_claim(
+                cursor=cursor,
                 claim_id=claim_id,
-                final_status=ClaimStatus.MANUAL_REVIEW,
-                validation_errors=(),
+                current_status=ClaimStatus.FRAUD_REVIEW,
+                new_status=ClaimStatus.APPROVED,
+                processing_step="FRAUD_REVIEW",
+                event_reason=(
+                    fraud_review_decision.reason
+                ),
+            )
+
+            return build_result(
+                claim_id=claim_id,
+                final_status=ClaimStatus.APPROVED,
                 eligibility_reason=(
                     eligibility_decision.reason
                 ),
                 duplicate_reason=(
                     duplicate_decision.reason
                 ),
-                duplicate_of_claim_id=None,
                 pricing_outcome=(
                     pricing_decision.outcome
                 ),
                 pricing_reason=(
                     pricing_decision.reason
                 ),
-                allowed_amount=None,
+                allowed_amount=(
+                    pricing_decision.allowed_amount
+                ),
+                fraud_review_outcome=(
+                    fraud_review_decision.outcome
+                ),
+                fraud_review_reason=(
+                    fraud_review_decision.reason
+                ),
             )
 
 
@@ -447,10 +528,10 @@ def process_claim_batch(
     active_diagnosis_codes: set[str],
     member_index: dict[str, dict[str, str]],
     pricing_rule_index: dict[str, dict[str, Any]],
+    fraud_review_rules: FraudReviewRules,
 ) -> list[ClaimWorkflowResult]:
     """
-    Process claims through intake, validation, eligibility, duplicate
-    detection, and pricing.
+    Process all claims through the Version 1 workflow.
 
     Claims are processed in source-file order so later claims can be
     compared with previously processed claims in the same batch.
@@ -466,6 +547,9 @@ def process_claim_batch(
             member_index=member_index,
             pricing_rule_index=(
                 pricing_rule_index
+            ),
+            fraud_review_rules=(
+                fraud_review_rules
             ),
         )
 
