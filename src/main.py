@@ -8,12 +8,17 @@ from src.database import (
     fetch_claim_status_summary,
     fetch_duplicate_decisions,
     fetch_eligibility_decisions,
+    fetch_priced_claims,
+    fetch_pricing_decisions,
     fetch_validation_failures,
     reset_workflow_data,
     test_connection,
 )
 from src.eligibility import (
     build_member_index,
+)
+from src.pricing import (
+    build_pricing_rule_index,
 )
 from src.validator import (
     build_active_diagnosis_codes,
@@ -28,7 +33,7 @@ def print_claim_results(
     results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print the final Day 5 workflow result for every claim.
+    Print the final Day 6 workflow result for every claim.
     """
     print("\nClaim Workflow Results")
     print("----------------------")
@@ -60,6 +65,24 @@ def print_claim_results(
             print(
                 f"  Duplicate of: "
                 f"{result.duplicate_of_claim_id}"
+            )
+
+        if result.pricing_outcome is not None:
+            print(
+                f"  Pricing outcome: "
+                f"{result.pricing_outcome.value}"
+            )
+
+        if result.pricing_reason is not None:
+            print(
+                f"  Pricing: "
+                f"{result.pricing_reason}"
+            )
+
+        if result.allowed_amount is not None:
+            print(
+                f"  Allowed amount: "
+                f"${result.allowed_amount:,.2f}"
             )
 
 
@@ -185,9 +208,74 @@ def print_duplicate_audit() -> None:
         )
 
 
+def print_pricing_audit() -> None:
+    """
+    Print pricing decisions from PostgreSQL audit history.
+    """
+    decisions = fetch_pricing_decisions()
+
+    print("\nPricing Audit History")
+    print("---------------------")
+
+    if not decisions:
+        print(
+            "No pricing decisions were recorded."
+        )
+        return
+
+    for decision in decisions:
+        print(
+            f"{decision['claim_id']}: "
+            f"{decision['previous_status']} -> "
+            f"{decision['new_status']}"
+        )
+
+        print(
+            f"  Reason: "
+            f"{decision['event_reason']}"
+        )
+
+
+def print_priced_claims() -> None:
+    """
+    Print claims that received successful pricing.
+    """
+    claims = fetch_priced_claims()
+
+    print("\nSuccessfully Priced Claims")
+    print("--------------------------")
+
+    if not claims:
+        print(
+            "No claims received an allowed amount."
+        )
+        return
+
+    for claim in claims:
+        print(
+            f"{claim['claim_id']}: "
+            f"{claim['procedure_code']}"
+        )
+
+        print(
+            f"  Billed amount: "
+            f"${claim['billed_amount']:,.2f}"
+        )
+
+        print(
+            f"  Allowed amount: "
+            f"${claim['allowed_amount']:,.2f}"
+        )
+
+        print(
+            f"  Current status: "
+            f"{claim['current_status']}"
+        )
+
+
 def main() -> None:
     """
-    Run the Day 5 claims workflow.
+    Run the Day 6 claims workflow.
     """
     print("Healthcare Claims Workflow")
     print("==========================")
@@ -227,10 +315,14 @@ def main() -> None:
         project_data["members"]
     )
 
+    pricing_rule_index = build_pricing_rule_index(
+        project_data["pricing_rules"]
+    )
+
     print(
         "\nProcessing claims through intake, "
-        "validation, eligibility, and "
-        "duplicate detection..."
+        "validation, eligibility, duplicate "
+        "detection, and pricing..."
     )
 
     results = process_claim_batch(
@@ -239,6 +331,9 @@ def main() -> None:
             active_diagnosis_codes
         ),
         member_index=member_index,
+        pricing_rule_index=(
+            pricing_rule_index
+        ),
     )
 
     print_claim_results(
@@ -257,8 +352,12 @@ def main() -> None:
 
     print_duplicate_audit()
 
+    print_pricing_audit()
+
+    print_priced_claims()
+
     print(
-        "\nDay 5 workflow completed successfully."
+        "\nDay 6 workflow completed successfully."
     )
 
 

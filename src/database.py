@@ -221,6 +221,40 @@ def update_claim_status(
         )
 
 
+def update_claim_allowed_amount(
+    cursor: Any,
+    claim_id: str,
+    allowed_amount: Decimal,
+) -> None:
+    """
+    Store the successful pricing result for one claim.
+
+    Args:
+        cursor: Active PostgreSQL cursor.
+        claim_id: Claim receiving the pricing result.
+        allowed_amount: Positive synthetic allowed amount.
+    """
+    cursor.execute(
+        """
+        UPDATE claims
+        SET
+            allowed_amount = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE claim_id = %s;
+        """,
+        (
+            allowed_amount,
+            claim_id,
+        ),
+    )
+
+    if cursor.rowcount != 1:
+        raise RuntimeError(
+            f"Allowed amount could not be stored for "
+            f"claim '{claim_id}'."
+        )
+
+
 def find_prior_duplicate_claim_id(
     cursor: Any,
     claim: dict[str, str],
@@ -228,22 +262,15 @@ def find_prior_duplicate_claim_id(
     """
     Find a previously processed claim matching the duplicate key.
 
-    The initial duplicate rule compares:
+    The duplicate rule compares:
 
     - member_id
     - provider_id
     - procedure_code
     - service_date
 
-    Only claims that passed validation and eligibility and reached
-    duplicate processing or a later supported state are considered.
-
-    Args:
-        cursor: Active PostgreSQL cursor.
-        claim: Claim currently being evaluated.
-
-    Returns:
-        The matching prior claim ID, or None when no match exists.
+    Only claims that reached duplicate processing or a later supported
+    workflow state are considered.
     """
     claim_id = claim.get(
         "claim_id",
@@ -432,6 +459,61 @@ def fetch_duplicate_decisions() -> list[dict[str, Any]]:
                 FROM claim_events
                 WHERE processing_step = 'DUPLICATE_CHECK'
                 ORDER BY claim_id, event_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_pricing_decisions() -> list[dict[str, Any]]:
+    """
+    Return all audit events created by pricing processing.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    claim_id,
+                    previous_status,
+                    new_status,
+                    processing_step,
+                    event_reason,
+                    created_at
+                FROM claim_events
+                WHERE processing_step = 'PRICING'
+                ORDER BY claim_id, event_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_priced_claims() -> list[dict[str, Any]]:
+    """
+    Return claims that received a successful allowed amount.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    claim_id,
+                    procedure_code,
+                    billed_amount,
+                    allowed_amount,
+                    current_status
+                FROM claims
+                WHERE allowed_amount IS NOT NULL
+                ORDER BY claim_id;
                 """
             )
 
