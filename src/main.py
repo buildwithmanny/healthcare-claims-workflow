@@ -15,6 +15,7 @@ from src.database import (
     fetch_fraud_review_decisions,
     fetch_priced_claims,
     fetch_pricing_decisions,
+    fetch_retry_queue_items,
     fetch_validation_failures,
     reset_workflow_data,
     test_connection,
@@ -40,6 +41,7 @@ from src.validator import (
 from src.workflow_engine import (
     ClaimWorkflowResult,
     process_claim_batch,
+    process_retry_queue,
 )
 
 
@@ -47,10 +49,10 @@ def print_claim_results(
     results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print the final Version 1 outcome for every claim.
+    Print the final outcome for every claim.
     """
-    print("\nClaim Workflow Results")
-    print("----------------------")
+    print("\nFinal Claim Workflow Results")
+    print("----------------------------")
 
     for result in results:
         print(
@@ -109,6 +111,23 @@ def print_claim_results(
             print(
                 f"  Fraud review: "
                 f"{result.fraud_review_reason}"
+            )
+
+        if result.retry_status is not None:
+            print(
+                f"  Retry status: "
+                f"{result.retry_status.value}"
+            )
+
+            print(
+                f"  Retry attempts: "
+                f"{result.retry_count}"
+            )
+
+        if result.retry_reason is not None:
+            print(
+                f"  Retry result: "
+                f"{result.retry_reason}"
             )
 
 
@@ -180,6 +199,14 @@ def print_audit_section(
             f"{decision['new_status']}"
         )
 
+        if decision.get(
+            "retry_attempt"
+        ) is not None:
+            print(
+                f"  Retry attempt: "
+                f"{decision['retry_attempt']}"
+            )
+
         print(
             f"  Reason: "
             f"{decision['event_reason']}"
@@ -223,6 +250,49 @@ def print_priced_claims() -> None:
         )
 
 
+def print_retry_queue() -> None:
+    """
+    Print retry counts, limits, errors, and final outcomes.
+    """
+    retry_items = fetch_retry_queue_items()
+
+    print("\nRetry Queue Final State")
+    print("-----------------------")
+
+    if not retry_items:
+        print(
+            "No retry queue records were created."
+        )
+        return
+
+    for item in retry_items:
+        print(
+            f"{item['claim_id']}: "
+            f"{item['retry_status']}"
+        )
+
+        print(
+            f"  Failed step: "
+            f"{item['failed_step']}"
+        )
+
+        print(
+            f"  Retry count: "
+            f"{item['retry_count']}"
+        )
+
+        print(
+            f"  Maximum retries: "
+            f"{item['max_retries']}"
+        )
+
+        if item["last_error"] is not None:
+            print(
+                f"  Last error: "
+                f"{item['last_error']}"
+            )
+
+
 def print_generated_reports(
     report_paths: dict[str, Path],
 ) -> None:
@@ -243,8 +313,7 @@ def print_generated_reports(
 
 def print_invalid_transition_guard() -> None:
     """
-    Demonstrate that a terminal validation failure cannot move directly
-    into pricing.
+    Demonstrate that a validation failure cannot move to pricing.
     """
     print("\nInvalid Transition Guard")
     print("------------------------")
@@ -346,6 +415,12 @@ def print_claim_journey(
             f"{event['processing_step']}"
         )
 
+        if event["retry_attempt"] is not None:
+            print(
+                f"    Retry attempt: "
+                f"{event['retry_attempt']}"
+            )
+
         print(
             f"    Why: "
             f"{event['event_reason']}"
@@ -357,9 +432,25 @@ def print_claim_journey(
         )
 
 
+def merge_retry_results(
+    initial_results: list[ClaimWorkflowResult],
+    retry_results: dict[str, ClaimWorkflowResult],
+) -> list[ClaimWorkflowResult]:
+    """
+    Replace temporary initial results with their final retry outcomes.
+    """
+    return [
+        retry_results.get(
+            result.claim_id,
+            result,
+        )
+        for result in initial_results
+    ]
+
+
 def main() -> None:
     """
-    Run the Day 8 healthcare claims workflow.
+    Run the Day 9 healthcare claims workflow.
     """
     print("Healthcare Claims Workflow")
     print("==========================")
@@ -408,11 +499,10 @@ def main() -> None:
     )
 
     print(
-        "\nProcessing claims through the complete "
-        "workflow..."
+        "\nPhase 1: Processing initial claim attempts..."
     )
 
-    results = process_claim_batch(
+    initial_results = process_claim_batch(
         claims=project_data["claims"],
         active_diagnosis_codes=(
             active_diagnosis_codes
@@ -426,17 +516,39 @@ def main() -> None:
         ),
     )
 
+    print(
+        "\nPhase 2: Processing the retry queue..."
+    )
+
+    retry_results = process_retry_queue(
+        claims=project_data["claims"],
+        initial_results=initial_results,
+        pricing_rule_index=(
+            pricing_rule_index
+        ),
+        fraud_review_rules=(
+            fraud_review_rules
+        ),
+    )
+
+    final_results = merge_retry_results(
+        initial_results=initial_results,
+        retry_results=retry_results,
+    )
+
     report_paths = generate_reports()
 
     print_claim_results(
-        results
+        final_results
     )
 
     print_result_totals(
-        results
+        final_results
     )
 
     print_database_summary()
+
+    print_retry_queue()
 
     print_audit_section(
         "Validation Failure Audit History",
@@ -454,7 +566,7 @@ def main() -> None:
     )
 
     print_audit_section(
-        "Pricing Audit History",
+        "Pricing and Retry Audit History",
         fetch_pricing_decisions(),
     )
 
@@ -468,11 +580,11 @@ def main() -> None:
     print_invalid_transition_guard()
 
     print_claim_journey(
-        "CLM001"
+        "CLM015"
     )
 
     print_claim_journey(
-        "CLM007"
+        "CLM017"
     )
 
     print_generated_reports(
@@ -480,7 +592,7 @@ def main() -> None:
     )
 
     print(
-        "\nDay 8 workflow completed successfully."
+        "\nDay 9 workflow completed successfully."
     )
 
 

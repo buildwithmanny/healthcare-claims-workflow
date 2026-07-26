@@ -103,16 +103,6 @@
             "current_status": "MANUAL_REVIEW"
         },
         {
-            "claim_id": "CLM015",
-            "member_id": "M005",
-            "provider_id": "PRV008",
-            "procedure_code": "PROC1005",
-            "service_date": "2026-07-23",
-            "billed_amount": "700.00",
-            "allowed_amount": null,
-            "current_status": "PRICING_RETRY"
-        },
-        {
             "claim_id": "CLM016",
             "member_id": "M004",
             "provider_id": "PRV009",
@@ -121,6 +111,16 @@
             "billed_amount": "1500.00",
             "allowed_amount": "600.00",
             "current_status": "MANUAL_REVIEW"
+        },
+        {
+            "claim_id": "CLM017",
+            "member_id": "M005",
+            "provider_id": "PRV010",
+            "procedure_code": "PROC1006",
+            "service_date": "2026-07-26",
+            "billed_amount": "750.00",
+            "allowed_amount": null,
+            "current_status": "FAILED"
         }
     ]
 }

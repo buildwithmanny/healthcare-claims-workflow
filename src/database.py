@@ -44,7 +44,7 @@ def blank_to_none(
     value: object,
 ) -> object | None:
     """
-    Convert blank strings to None for PostgreSQL NULL values.
+    Convert blank strings to PostgreSQL NULL values.
     """
     if value is None:
         return None
@@ -120,9 +120,6 @@ def upsert_claim_record(
 ) -> None:
     """
     Insert a claim or reset its local demonstration record.
-
-    The application resets local workflow data before each demonstration
-    run, so this upsert is used only for repeatable development runs.
     """
     cursor.execute(
         """
@@ -199,21 +196,6 @@ def update_claim_status(
 ) -> None:
     """
     Update a claim only when its persisted state matches expectations.
-
-    This prevents an outdated or incorrectly ordered workflow process
-    from overwriting a claim that has already moved to another state.
-
-    Args:
-        cursor: Active PostgreSQL cursor.
-        claim_id: Claim being transitioned.
-        expected_current_status: State the workflow believes the claim
-        currently occupies.
-        new_status: Requested next state.
-
-    Raises:
-        RuntimeError:
-            If the claim does not exist or its actual state differs
-            from expected_current_status.
     """
     cursor.execute(
         """
@@ -302,13 +284,6 @@ def find_prior_duplicate_claim_id(
 ) -> str | None:
     """
     Find a previously processed claim matching the duplicate key.
-
-    The duplicate rule compares:
-
-    - member_id
-    - provider_id
-    - procedure_code
-    - service_date
     """
     claim_id = claim.get(
         "claim_id",
@@ -383,8 +358,6 @@ def count_prior_member_claims(
 ) -> int:
     """
     Count qualifying prior claims for the same member.
-
-    The current claim is excluded.
     """
     claim_id = claim.get(
         "claim_id",
@@ -446,11 +419,251 @@ def count_prior_member_claims(
     )
 
 
+def enqueue_pricing_retry(
+    cursor: Any,
+    claim_id: str,
+    last_error: str,
+    max_retries: int,
+) -> int:
+    """
+    Add a temporary pricing failure to the retry queue.
+
+    The initial retry count is zero because no retry attempt has
+    occurred yet.
+    """
+    if max_retries <= 0:
+        raise ValueError(
+            "max_retries must be greater than zero."
+        )
+
+    cursor.execute(
+        """
+        INSERT INTO retry_queue (
+            claim_id,
+            failed_step,
+            retry_count,
+            max_retries,
+            next_retry_time,
+            retry_status,
+            last_error
+        )
+        VALUES (
+            %s,
+            'PRICING',
+            0,
+            %s,
+            CURRENT_TIMESTAMP,
+            'PENDING',
+            %s
+        )
+        RETURNING retry_id;
+        """,
+        (
+            claim_id,
+            max_retries,
+            last_error,
+        ),
+    )
+
+    result = cursor.fetchone()
+
+    if result is None:
+        raise RuntimeError(
+            "PostgreSQL did not return a retry ID."
+        )
+
+    return int(
+        result[0]
+    )
+
+
+def start_retry_attempt(
+    cursor: Any,
+    retry_id: int,
+) -> dict[str, Any]:
+    """
+    Atomically begin one pending retry attempt.
+
+    The retry count is incremented when the attempt begins.
+    """
+    cursor.execute(
+        """
+        UPDATE retry_queue
+        SET
+            retry_count = retry_count + 1,
+            retry_status = 'PROCESSING',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE retry_id = %s
+          AND retry_status = 'PENDING'
+          AND retry_count < max_retries
+        RETURNING
+            retry_id,
+            claim_id,
+            failed_step,
+            retry_count,
+            max_retries;
+        """,
+        (
+            retry_id,
+        ),
+    )
+
+    result = cursor.fetchone()
+
+    if result is None:
+        raise RuntimeError(
+            f"Retry queue item '{retry_id}' could not "
+            "start another attempt."
+        )
+
+    return {
+        "retry_id": int(
+            result[0]
+        ),
+        "claim_id": str(
+            result[1]
+        ),
+        "failed_step": str(
+            result[2]
+        ),
+        "retry_count": int(
+            result[3]
+        ),
+        "max_retries": int(
+            result[4]
+        ),
+    }
+
+
+def mark_retry_pending(
+    cursor: Any,
+    retry_id: int,
+    last_error: str,
+) -> None:
+    """
+    Return a failed retry attempt to PENDING status.
+    """
+    cursor.execute(
+        """
+        UPDATE retry_queue
+        SET
+            retry_status = 'PENDING',
+            next_retry_time = CURRENT_TIMESTAMP,
+            last_error = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE retry_id = %s
+          AND retry_status = 'PROCESSING';
+        """,
+        (
+            last_error,
+            retry_id,
+        ),
+    )
+
+    if cursor.rowcount != 1:
+        raise RuntimeError(
+            f"Retry queue item '{retry_id}' could not "
+            "return to PENDING status."
+        )
+
+
+def mark_retry_succeeded(
+    cursor: Any,
+    retry_id: int,
+) -> None:
+    """
+    Mark a retry queue item as successfully resolved.
+    """
+    cursor.execute(
+        """
+        UPDATE retry_queue
+        SET
+            retry_status = 'SUCCEEDED',
+            next_retry_time = NULL,
+            last_error = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE retry_id = %s
+          AND retry_status = 'PROCESSING';
+        """,
+        (
+            retry_id,
+        ),
+    )
+
+    if cursor.rowcount != 1:
+        raise RuntimeError(
+            f"Retry queue item '{retry_id}' could not "
+            "be marked SUCCEEDED."
+        )
+
+
+def mark_retry_exhausted(
+    cursor: Any,
+    retry_id: int,
+    last_error: str,
+) -> None:
+    """
+    Mark a retry queue item as having exhausted all attempts.
+    """
+    cursor.execute(
+        """
+        UPDATE retry_queue
+        SET
+            retry_status = 'EXHAUSTED',
+            next_retry_time = NULL,
+            last_error = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE retry_id = %s
+          AND retry_status = 'PROCESSING';
+        """,
+        (
+            last_error,
+            retry_id,
+        ),
+    )
+
+    if cursor.rowcount != 1:
+        raise RuntimeError(
+            f"Retry queue item '{retry_id}' could not "
+            "be marked EXHAUSTED."
+        )
+
+
+def mark_retry_cancelled(
+    cursor: Any,
+    retry_id: int,
+    last_error: str,
+) -> None:
+    """
+    Cancel retry processing after a permanent failure is discovered.
+    """
+    cursor.execute(
+        """
+        UPDATE retry_queue
+        SET
+            retry_status = 'CANCELLED',
+            next_retry_time = NULL,
+            last_error = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE retry_id = %s
+          AND retry_status = 'PROCESSING';
+        """,
+        (
+            last_error,
+            retry_id,
+        ),
+    )
+
+    if cursor.rowcount != 1:
+        raise RuntimeError(
+            f"Retry queue item '{retry_id}' could not "
+            "be marked CANCELLED."
+        )
+
+
 def reset_workflow_data() -> None:
     """
     Clear workflow records for repeatable local development runs.
-
-    This is a development helper, not a production data pattern.
     """
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -463,6 +676,66 @@ def reset_workflow_data() -> None:
                     claims
                 RESTART IDENTITY;
                 """
+            )
+
+
+def fetch_pending_retry_queue_items() -> list[dict[str, Any]]:
+    """
+    Return retry queue items waiting for processing.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    retry_id,
+                    claim_id,
+                    failed_step,
+                    retry_count,
+                    max_retries,
+                    retry_status,
+                    last_error
+                FROM retry_queue
+                WHERE retry_status = 'PENDING'
+                ORDER BY retry_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_retry_queue_items() -> list[dict[str, Any]]:
+    """
+    Return all retry queue records and final outcomes.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    retry_id,
+                    claim_id,
+                    failed_step,
+                    retry_count,
+                    max_retries,
+                    next_retry_time,
+                    retry_status,
+                    last_error,
+                    created_at,
+                    updated_at
+                FROM retry_queue
+                ORDER BY retry_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
             )
 
 
@@ -506,6 +779,7 @@ def fetch_validation_failures() -> list[dict[str, Any]]:
                     new_status,
                     processing_step,
                     event_reason,
+                    retry_attempt,
                     created_at
                 FROM claim_events
                 WHERE new_status = 'VALIDATION_FAILED'
@@ -520,7 +794,7 @@ def fetch_validation_failures() -> list[dict[str, Any]]:
 
 def fetch_eligibility_decisions() -> list[dict[str, Any]]:
     """
-    Return all audit events created by eligibility processing.
+    Return eligibility audit events.
     """
     with get_connection() as connection:
         with connection.cursor(
@@ -534,6 +808,7 @@ def fetch_eligibility_decisions() -> list[dict[str, Any]]:
                     new_status,
                     processing_step,
                     event_reason,
+                    retry_attempt,
                     created_at
                 FROM claim_events
                 WHERE processing_step = 'ELIGIBILITY'
@@ -548,7 +823,7 @@ def fetch_eligibility_decisions() -> list[dict[str, Any]]:
 
 def fetch_duplicate_decisions() -> list[dict[str, Any]]:
     """
-    Return all audit events created by duplicate processing.
+    Return duplicate-processing audit events.
     """
     with get_connection() as connection:
         with connection.cursor(
@@ -562,6 +837,7 @@ def fetch_duplicate_decisions() -> list[dict[str, Any]]:
                     new_status,
                     processing_step,
                     event_reason,
+                    retry_attempt,
                     created_at
                 FROM claim_events
                 WHERE processing_step = 'DUPLICATE_CHECK'
@@ -576,7 +852,7 @@ def fetch_duplicate_decisions() -> list[dict[str, Any]]:
 
 def fetch_pricing_decisions() -> list[dict[str, Any]]:
     """
-    Return all audit events created by pricing processing.
+    Return initial pricing audit events.
     """
     with get_connection() as connection:
         with connection.cursor(
@@ -590,9 +866,13 @@ def fetch_pricing_decisions() -> list[dict[str, Any]]:
                     new_status,
                     processing_step,
                     event_reason,
+                    retry_attempt,
                     created_at
                 FROM claim_events
-                WHERE processing_step = 'PRICING'
+                WHERE processing_step IN (
+                    'PRICING',
+                    'PRICING_RETRY'
+                )
                 ORDER BY claim_id, event_id;
                 """
             )
@@ -604,7 +884,7 @@ def fetch_pricing_decisions() -> list[dict[str, Any]]:
 
 def fetch_fraud_review_decisions() -> list[dict[str, Any]]:
     """
-    Return all audit events created by fraud-review processing.
+    Return fraud-review audit events.
     """
     with get_connection() as connection:
         with connection.cursor(
@@ -618,6 +898,7 @@ def fetch_fraud_review_decisions() -> list[dict[str, Any]]:
                     new_status,
                     processing_step,
                     event_reason,
+                    retry_attempt,
                     created_at
                 FROM claim_events
                 WHERE processing_step = 'FRAUD_REVIEW'
@@ -729,10 +1010,7 @@ def fetch_claim_current_state(
     claim_id: str,
 ) -> dict[str, Any] | None:
     """
-    Answer: Where is this claim now?
-
-    Returns the current persisted state and the time the claim record
-    was most recently updated.
+    Return the current persisted state for one claim.
     """
     with get_connection() as connection:
         with connection.cursor(
@@ -767,11 +1045,7 @@ def fetch_claim_history(
     claim_id: str,
 ) -> list[dict[str, Any]]:
     """
-    Answer:
-
-    - Where has this claim been?
-    - Why did each status change?
-    - When did each change occur?
+    Return the complete audit history for one claim.
     """
     with get_connection() as connection:
         with connection.cursor(
