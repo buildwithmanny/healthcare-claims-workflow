@@ -1,11 +1,14 @@
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from src.claim_loader import (
     load_project_data,
     print_source_summary,
 )
 from src.database import (
+    fetch_claim_current_state,
+    fetch_claim_history,
     fetch_claim_status_summary,
     fetch_duplicate_decisions,
     fetch_eligibility_decisions,
@@ -26,6 +29,11 @@ from src.pricing import (
     build_pricing_rule_index,
 )
 from src.reporting import generate_reports
+from src.state_manager import (
+    ClaimStatus,
+    InvalidStateTransitionError,
+    validate_transition,
+)
 from src.validator import (
     build_active_diagnosis_codes,
 )
@@ -144,7 +152,7 @@ def print_database_summary() -> None:
 
 def print_audit_section(
     title: str,
-    decisions: list[dict],
+    decisions: list[dict[str, Any]],
 ) -> None:
     """
     Print one collection of workflow audit events.
@@ -233,9 +241,125 @@ def print_generated_reports(
         )
 
 
+def print_invalid_transition_guard() -> None:
+    """
+    Demonstrate that a terminal validation failure cannot move directly
+    into pricing.
+    """
+    print("\nInvalid Transition Guard")
+    print("------------------------")
+
+    try:
+        validate_transition(
+            ClaimStatus.VALIDATION_FAILED,
+            ClaimStatus.PRICING,
+        )
+
+    except InvalidStateTransitionError as error:
+        print(
+            "Blocked invalid transition as expected."
+        )
+
+        print(
+            f"  {error}"
+        )
+
+        return
+
+    raise RuntimeError(
+        "The state manager unexpectedly allowed "
+        "VALIDATION_FAILED -> PRICING."
+    )
+
+
+def print_claim_journey(
+    claim_id: str,
+) -> None:
+    """
+    Print the current state and complete audit history for one claim.
+    """
+    current_state = fetch_claim_current_state(
+        claim_id
+    )
+
+    history = fetch_claim_history(
+        claim_id
+    )
+
+    title = f"Claim Journey — {claim_id}"
+
+    print(
+        f"\n{title}"
+    )
+
+    print(
+        "-" * len(
+            title
+        )
+    )
+
+    if current_state is None:
+        print(
+            "Claim was not found."
+        )
+        return
+
+    print(
+        "Where is this claim now?"
+    )
+
+    print(
+        f"  Current status: "
+        f"{current_state['current_status']}"
+    )
+
+    print(
+        f"  Current record last updated: "
+        f"{current_state['updated_at']}"
+    )
+
+    print(
+        "\nWhere has this claim been?"
+    )
+
+    if not history:
+        print(
+            "  No audit events were found."
+        )
+        return
+
+    for event in history:
+        previous_status = (
+            event["previous_status"]
+            if event["previous_status"] is not None
+            else "START"
+        )
+
+        print(
+            f"  Event {event['event_id']}: "
+            f"{previous_status} -> "
+            f"{event['new_status']}"
+        )
+
+        print(
+            f"    Processing step: "
+            f"{event['processing_step']}"
+        )
+
+        print(
+            f"    Why: "
+            f"{event['event_reason']}"
+        )
+
+        print(
+            f"    When: "
+            f"{event['created_at']}"
+        )
+
+
 def main() -> None:
     """
-    Run the complete Version 1 healthcare claims workflow.
+    Run the Day 8 healthcare claims workflow.
     """
     print("Healthcare Claims Workflow")
     print("==========================")
@@ -285,7 +409,7 @@ def main() -> None:
 
     print(
         "\nProcessing claims through the complete "
-        "Version 1 workflow..."
+        "workflow..."
     )
 
     results = process_claim_batch(
@@ -341,12 +465,22 @@ def main() -> None:
 
     print_priced_claims()
 
+    print_invalid_transition_guard()
+
+    print_claim_journey(
+        "CLM001"
+    )
+
+    print_claim_journey(
+        "CLM007"
+    )
+
     print_generated_reports(
         report_paths
     )
 
     print(
-        "\nVersion 1 workflow completed successfully."
+        "\nDay 8 workflow completed successfully."
     )
 
 

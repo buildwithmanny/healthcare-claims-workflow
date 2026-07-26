@@ -5,7 +5,7 @@ class ClaimStatus(StrEnum):
     """
     All supported states in the healthcare claims workflow.
 
-    Each claim must have exactly one current state.
+    Each persisted claim must have exactly one current state.
     """
 
     RECEIVED = "RECEIVED"
@@ -30,70 +30,109 @@ class ClaimStatus(StrEnum):
     FAILED = "FAILED"
 
 
-VALID_TRANSITIONS: dict[ClaimStatus, set[ClaimStatus]] = {
-    ClaimStatus.RECEIVED: {
-        ClaimStatus.VALIDATING,
-        ClaimStatus.FAILED,
-    },
+class InvalidStateTransitionError(ValueError):
+    """
+    Raised when a claim attempts an unsupported state transition.
+    """
 
-    ClaimStatus.VALIDATING: {
-        ClaimStatus.ELIGIBILITY_CHECK,
-        ClaimStatus.VALIDATION_FAILED,
-        ClaimStatus.FAILED,
-    },
 
-    ClaimStatus.VALIDATION_FAILED: set(),
+VALID_TRANSITIONS: dict[
+    ClaimStatus,
+    frozenset[ClaimStatus],
+] = {
+    ClaimStatus.RECEIVED: frozenset(
+        {
+            ClaimStatus.VALIDATING,
+            ClaimStatus.FAILED,
+        }
+    ),
 
-    ClaimStatus.ELIGIBILITY_CHECK: {
-        ClaimStatus.DUPLICATE_CHECK,
-        ClaimStatus.INELIGIBLE,
-        ClaimStatus.FAILED,
-    },
+    ClaimStatus.VALIDATING: frozenset(
+        {
+            ClaimStatus.ELIGIBILITY_CHECK,
+            ClaimStatus.VALIDATION_FAILED,
+            ClaimStatus.FAILED,
+        }
+    ),
 
-    ClaimStatus.INELIGIBLE: {
-        ClaimStatus.DENIED,
-    },
+    ClaimStatus.VALIDATION_FAILED: frozenset(),
 
-    ClaimStatus.DUPLICATE_CHECK: {
-        ClaimStatus.DUPLICATE,
-        ClaimStatus.PRICING,
-        ClaimStatus.FAILED,
-    },
+    ClaimStatus.ELIGIBILITY_CHECK: frozenset(
+        {
+            ClaimStatus.DUPLICATE_CHECK,
+            ClaimStatus.INELIGIBLE,
+            ClaimStatus.FAILED,
+        }
+    ),
 
-    ClaimStatus.DUPLICATE: set(),
+    ClaimStatus.INELIGIBLE: frozenset(
+        {
+            ClaimStatus.DENIED,
+        }
+    ),
 
-    ClaimStatus.PRICING: {
-        ClaimStatus.FRAUD_REVIEW,
-        ClaimStatus.PRICING_RETRY,
-        ClaimStatus.MANUAL_REVIEW,
-        ClaimStatus.FAILED,
-    },
+    ClaimStatus.DUPLICATE_CHECK: frozenset(
+        {
+            ClaimStatus.DUPLICATE,
+            ClaimStatus.PRICING,
+            ClaimStatus.FAILED,
+        }
+    ),
 
-    ClaimStatus.PRICING_RETRY: {
-        ClaimStatus.PRICING,
-        ClaimStatus.MANUAL_REVIEW,
-        ClaimStatus.FAILED,
-    },
+    ClaimStatus.DUPLICATE: frozenset(),
 
-    ClaimStatus.FRAUD_REVIEW: {
-        ClaimStatus.APPROVED,
-        ClaimStatus.DENIED,
-        ClaimStatus.MANUAL_REVIEW,
-        ClaimStatus.FAILED,
-    },
+    ClaimStatus.PRICING: frozenset(
+        {
+            ClaimStatus.FRAUD_REVIEW,
+            ClaimStatus.PRICING_RETRY,
+            ClaimStatus.MANUAL_REVIEW,
+            ClaimStatus.FAILED,
+        }
+    ),
 
-    ClaimStatus.MANUAL_REVIEW: {
-        ClaimStatus.APPROVED,
-        ClaimStatus.DENIED,
-        ClaimStatus.FAILED,
-    },
+    ClaimStatus.PRICING_RETRY: frozenset(
+        {
+            ClaimStatus.PRICING,
+            ClaimStatus.MANUAL_REVIEW,
+            ClaimStatus.FAILED,
+        }
+    ),
 
-    ClaimStatus.APPROVED: set(),
+    ClaimStatus.FRAUD_REVIEW: frozenset(
+        {
+            ClaimStatus.APPROVED,
+            ClaimStatus.DENIED,
+            ClaimStatus.MANUAL_REVIEW,
+            ClaimStatus.FAILED,
+        }
+    ),
 
-    ClaimStatus.DENIED: set(),
+    ClaimStatus.MANUAL_REVIEW: frozenset(
+        {
+            ClaimStatus.APPROVED,
+            ClaimStatus.DENIED,
+            ClaimStatus.FAILED,
+        }
+    ),
 
-    ClaimStatus.FAILED: set(),
+    ClaimStatus.APPROVED: frozenset(),
+
+    ClaimStatus.DENIED: frozenset(),
+
+    ClaimStatus.FAILED: frozenset(),
 }
+
+
+PROCESSING_STATES = frozenset(
+    {
+        ClaimStatus.RECEIVED,
+        ClaimStatus.VALIDATING,
+        ClaimStatus.ELIGIBILITY_CHECK,
+        ClaimStatus.DUPLICATE_CHECK,
+        ClaimStatus.PRICING,
+        ClaimStatus.FRAUD_REVIEW,
+    }
+)
 
 
 TERMINAL_STATES = frozenset(
@@ -121,26 +160,30 @@ MANUAL_REVIEW_STATES = frozenset(
 )
 
 
+def get_allowed_transitions(
+    current_status: ClaimStatus,
+) -> frozenset[ClaimStatus]:
+    """
+    Return all legal next states for the supplied current state.
+    """
+    return VALID_TRANSITIONS[
+        current_status
+    ]
+
+
 def is_valid_transition(
     current_status: ClaimStatus,
     new_status: ClaimStatus,
 ) -> bool:
     """
-    Return True when a workflow transition is allowed.
-
-    Args:
-        current_status: The claim's current workflow state.
-        new_status: The requested next workflow state.
-
-    Returns:
-        True if the transition is valid, otherwise False.
+    Return whether the requested state transition is allowed.
     """
-    allowed_transitions = VALID_TRANSITIONS.get(
-        current_status,
-        set(),
+    return (
+        new_status
+        in get_allowed_transitions(
+            current_status
+        )
     )
-
-    return new_status in allowed_transitions
 
 
 def validate_transition(
@@ -148,43 +191,123 @@ def validate_transition(
     new_status: ClaimStatus,
 ) -> None:
     """
-    Validate a requested workflow transition.
+    Validate one requested claim-state transition.
 
     Raises:
-        ValueError: If the requested transition is not allowed.
+        InvalidStateTransitionError:
+            If the requested transition is not allowed.
     """
-    if not is_valid_transition(
+    if is_valid_transition(
         current_status,
         new_status,
     ):
-        raise ValueError(
-            "Invalid claim state transition: "
-            f"{current_status.value} -> {new_status.value}"
+        return
+
+    allowed_statuses = sorted(
+        status.value
+        for status in get_allowed_transitions(
+            current_status
         )
+    )
 
+    allowed_description = (
+        ", ".join(
+            allowed_statuses
+        )
+        if allowed_statuses
+        else "none"
+    )
 
-def get_allowed_transitions(
-    current_status: ClaimStatus,
-) -> set[ClaimStatus]:
-    """
-    Return all states that can legally follow the current state.
-
-    Args:
-        current_status: The claim's current workflow state.
-
-    Returns:
-        A copy of the set of allowed next states.
-    """
-    return VALID_TRANSITIONS.get(
-        current_status,
-        set(),
-    ).copy()
+    raise InvalidStateTransitionError(
+        "Invalid claim state transition: "
+        f"{current_status.value} -> "
+        f"{new_status.value}. "
+        "Allowed next states: "
+        f"{allowed_description}."
+    )
 
 
 def is_terminal_state(
     status: ClaimStatus,
 ) -> bool:
     """
-    Return True when the claim has reached a final workflow state.
+    Return whether a claim has reached a final workflow state.
     """
     return status in TERMINAL_STATES
+
+
+def is_retry_state(
+    status: ClaimStatus,
+) -> bool:
+    """
+    Return whether a claim is waiting for retry processing.
+    """
+    return status in RETRY_STATES
+
+
+def requires_manual_review(
+    status: ClaimStatus,
+) -> bool:
+    """
+    Return whether a claim requires human intervention.
+    """
+    return status in MANUAL_REVIEW_STATES
+
+
+def validate_state_configuration() -> None:
+    """
+    Validate the state map when this module is imported.
+
+    This prevents a newly added ClaimStatus from being forgotten in
+    the transition map.
+    """
+    configured_states = set(
+        VALID_TRANSITIONS
+    )
+
+    declared_states = set(
+        ClaimStatus
+    )
+
+    if configured_states != declared_states:
+        missing_states = (
+            declared_states
+            - configured_states
+        )
+
+        extra_states = (
+            configured_states
+            - declared_states
+        )
+
+        raise RuntimeError(
+            "Claim state configuration is incomplete. "
+            f"Missing states: {missing_states}. "
+            f"Unexpected states: {extra_states}."
+        )
+
+    for terminal_status in TERMINAL_STATES:
+        if VALID_TRANSITIONS[
+            terminal_status
+        ]:
+            raise RuntimeError(
+                f"Terminal state "
+                f"'{terminal_status.value}' "
+                "cannot have outgoing transitions."
+            )
+
+    for current_status, next_statuses in (
+        VALID_TRANSITIONS.items()
+    ):
+        if current_status != ClaimStatus.RECEIVED:
+            if (
+                ClaimStatus.RECEIVED
+                in next_statuses
+            ):
+                raise RuntimeError(
+                    "RECEIVED can only be used as "
+                    "the initial workflow state."
+                )
+
+
+validate_state_configuration()

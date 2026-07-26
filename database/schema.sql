@@ -1,11 +1,14 @@
 -- Healthcare Claims Workflow
--- Initial PostgreSQL Schema
+-- PostgreSQL Schema
 --
 -- This schema stores:
 -- 1. The current state of each claim.
 -- 2. The complete workflow history for each claim.
 -- 3. Claims waiting for retry processing.
 -- 4. Claims requiring manual review.
+--
+-- The claims table represents current state.
+-- The claim_events table represents historical state changes.
 
 
 -- ============================================================
@@ -111,6 +114,111 @@ CREATE TABLE IF NOT EXISTS claim_events (
             OR retry_attempt >= 0
         )
 );
+
+
+-- Add or refresh Day 8 audit-history constraints.
+--
+-- These statements also update databases created during earlier
+-- project days when claim_events already existed.
+
+ALTER TABLE claim_events
+    DROP CONSTRAINT IF EXISTS
+        claim_events_previous_status_valid;
+
+
+ALTER TABLE claim_events
+    ADD CONSTRAINT claim_events_previous_status_valid
+    CHECK (
+        previous_status IS NULL
+        OR previous_status IN (
+            'RECEIVED',
+            'VALIDATING',
+            'VALIDATION_FAILED',
+            'ELIGIBILITY_CHECK',
+            'INELIGIBLE',
+            'DUPLICATE_CHECK',
+            'DUPLICATE',
+            'PRICING',
+            'PRICING_RETRY',
+            'FRAUD_REVIEW',
+            'MANUAL_REVIEW',
+            'APPROVED',
+            'DENIED',
+            'FAILED'
+        )
+    );
+
+
+ALTER TABLE claim_events
+    DROP CONSTRAINT IF EXISTS
+        claim_events_new_status_valid;
+
+
+ALTER TABLE claim_events
+    ADD CONSTRAINT claim_events_new_status_valid
+    CHECK (
+        new_status IN (
+            'RECEIVED',
+            'VALIDATING',
+            'VALIDATION_FAILED',
+            'ELIGIBILITY_CHECK',
+            'INELIGIBLE',
+            'DUPLICATE_CHECK',
+            'DUPLICATE',
+            'PRICING',
+            'PRICING_RETRY',
+            'FRAUD_REVIEW',
+            'MANUAL_REVIEW',
+            'APPROVED',
+            'DENIED',
+            'FAILED'
+        )
+    );
+
+
+ALTER TABLE claim_events
+    DROP CONSTRAINT IF EXISTS
+        claim_events_status_changed;
+
+
+ALTER TABLE claim_events
+    ADD CONSTRAINT claim_events_status_changed
+    CHECK (
+        previous_status IS NULL
+        OR previous_status <> new_status
+    );
+
+
+ALTER TABLE claim_events
+    DROP CONSTRAINT IF EXISTS
+        claim_events_intake_shape_valid;
+
+
+ALTER TABLE claim_events
+    ADD CONSTRAINT claim_events_intake_shape_valid
+    CHECK (
+        (
+            previous_status IS NULL
+            AND new_status = 'RECEIVED'
+        )
+        OR
+        (
+            previous_status IS NOT NULL
+            AND new_status <> 'RECEIVED'
+        )
+    );
+
+
+ALTER TABLE claim_events
+    DROP CONSTRAINT IF EXISTS
+        claim_events_processing_step_not_blank;
+
+
+ALTER TABLE claim_events
+    ADD CONSTRAINT claim_events_processing_step_not_blank
+    CHECK (
+        BTRIM(processing_step) <> ''
+    );
 
 
 -- ============================================================
@@ -250,6 +358,14 @@ CREATE INDEX IF NOT EXISTS idx_claim_events_created_at
     ON claim_events(created_at);
 
 
+CREATE INDEX IF NOT EXISTS idx_claim_events_claim_history
+    ON claim_events(
+        claim_id,
+        created_at,
+        event_id
+    );
+
+
 CREATE INDEX IF NOT EXISTS idx_retry_queue_claim_id
     ON retry_queue(claim_id);
 
@@ -268,3 +384,27 @@ CREATE INDEX IF NOT EXISTS idx_manual_review_claim_id
 
 CREATE INDEX IF NOT EXISTS idx_manual_review_status
     ON manual_review_queue(review_status);
+
+
+-- ============================================================
+-- CLAIM JOURNEY VIEW
+-- ============================================================
+
+CREATE OR REPLACE VIEW claim_journey AS
+SELECT
+    c.claim_id,
+    c.current_status,
+    c.updated_at AS claim_updated_at,
+
+    e.event_id,
+    e.previous_status,
+    e.new_status,
+    e.processing_step,
+    e.event_reason,
+    e.retry_attempt,
+    e.created_at AS event_created_at
+
+FROM claims AS c
+
+INNER JOIN claim_events AS e
+    ON e.claim_id = c.claim_id;

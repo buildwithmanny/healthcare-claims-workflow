@@ -121,10 +121,8 @@ def upsert_claim_record(
     """
     Insert a claim or reset its local demonstration record.
 
-    Args:
-        cursor: Active PostgreSQL cursor.
-        claim: Raw claim data.
-        current_status: Workflow status to store.
+    The application resets local workflow data before each demonstration
+    run, so this upsert is used only for repeatable development runs.
     """
     cursor.execute(
         """
@@ -196,10 +194,26 @@ def upsert_claim_record(
 def update_claim_status(
     cursor: Any,
     claim_id: str,
+    expected_current_status: str,
     new_status: str,
 ) -> None:
     """
-    Update the current workflow status for one claim.
+    Update a claim only when its persisted state matches expectations.
+
+    This prevents an outdated or incorrectly ordered workflow process
+    from overwriting a claim that has already moved to another state.
+
+    Args:
+        cursor: Active PostgreSQL cursor.
+        claim_id: Claim being transitioned.
+        expected_current_status: State the workflow believes the claim
+        currently occupies.
+        new_status: Requested next state.
+
+    Raises:
+        RuntimeError:
+            If the claim does not exist or its actual state differs
+            from expected_current_status.
     """
     cursor.execute(
         """
@@ -207,18 +221,50 @@ def update_claim_status(
         SET
             current_status = %s,
             updated_at = CURRENT_TIMESTAMP
-        WHERE claim_id = %s;
+        WHERE claim_id = %s
+          AND current_status = %s
+        RETURNING current_status;
         """,
         (
             new_status,
             claim_id,
+            expected_current_status,
         ),
     )
 
-    if cursor.rowcount != 1:
+    result = cursor.fetchone()
+
+    if result is not None:
+        return
+
+    cursor.execute(
+        """
+        SELECT
+            current_status
+        FROM claims
+        WHERE claim_id = %s;
+        """,
+        (
+            claim_id,
+        ),
+    )
+
+    existing_claim = cursor.fetchone()
+
+    if existing_claim is None:
         raise RuntimeError(
-            f"Claim '{claim_id}' could not be updated."
+            f"Claim '{claim_id}' does not exist."
         )
+
+    actual_status = existing_claim[0]
+
+    raise RuntimeError(
+        f"Claim '{claim_id}' state conflict. "
+        f"Expected current state "
+        f"'{expected_current_status}', "
+        f"but PostgreSQL contains "
+        f"'{actual_status}'."
+    )
 
 
 def update_claim_allowed_amount(
@@ -339,9 +385,6 @@ def count_prior_member_claims(
     Count qualifying prior claims for the same member.
 
     The current claim is excluded.
-
-    Only claims that reached pricing or a later operational state are
-    included in the frequency calculation.
     """
     claim_id = claim.get(
         "claim_id",
@@ -407,8 +450,7 @@ def reset_workflow_data() -> None:
     """
     Clear workflow records for repeatable local development runs.
 
-    This is a local development helper and should not be treated as a
-    production data-management pattern.
+    This is a development helper, not a production data pattern.
     """
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -676,6 +718,124 @@ def fetch_exception_report_rows() -> list[dict[str, Any]]:
                 )
                 ORDER BY claim_id;
                 """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_claim_current_state(
+    claim_id: str,
+) -> dict[str, Any] | None:
+    """
+    Answer: Where is this claim now?
+
+    Returns the current persisted state and the time the claim record
+    was most recently updated.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    claim_id,
+                    current_status,
+                    created_at,
+                    updated_at
+                FROM claims
+                WHERE claim_id = %s;
+                """,
+                (
+                    claim_id,
+                ),
+            )
+
+            result = cursor.fetchone()
+
+    if result is None:
+        return None
+
+    return dict(
+        result
+    )
+
+
+def fetch_claim_history(
+    claim_id: str,
+) -> list[dict[str, Any]]:
+    """
+    Answer:
+
+    - Where has this claim been?
+    - Why did each status change?
+    - When did each change occur?
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    event_id,
+                    claim_id,
+                    previous_status,
+                    new_status,
+                    processing_step,
+                    event_reason,
+                    retry_attempt,
+                    created_at
+                FROM claim_events
+                WHERE claim_id = %s
+                ORDER BY
+                    created_at,
+                    event_id;
+                """,
+                (
+                    claim_id,
+                ),
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_claim_journey(
+    claim_id: str,
+) -> list[dict[str, Any]]:
+    """
+    Return the combined current-state and history view for one claim.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    claim_id,
+                    current_status,
+                    claim_updated_at,
+                    event_id,
+                    previous_status,
+                    new_status,
+                    processing_step,
+                    event_reason,
+                    retry_attempt,
+                    event_created_at
+                FROM claim_journey
+                WHERE claim_id = %s
+                ORDER BY
+                    event_created_at,
+                    event_id;
+                """,
+                (
+                    claim_id,
+                ),
             )
 
             return list(

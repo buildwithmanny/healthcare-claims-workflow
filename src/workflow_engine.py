@@ -60,6 +60,11 @@ def transition_claim(
 ) -> None:
     """
     Validate, persist, and audit one claim-state transition.
+
+    The operation uses the caller's active transaction.
+
+    If either the status update or audit insert fails, PostgreSQL rolls
+    back both operations.
     """
     validate_transition(
         current_status,
@@ -67,9 +72,12 @@ def transition_claim(
     )
 
     update_claim_status(
-        cursor,
-        claim_id,
-        new_status.value,
+        cursor=cursor,
+        claim_id=claim_id,
+        expected_current_status=(
+            current_status.value
+        ),
+        new_status=new_status.value,
     )
 
     insert_claim_event(
