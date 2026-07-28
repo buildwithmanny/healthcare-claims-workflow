@@ -1,0 +1,17 @@
+[
+    {
+        "claim_id": "CLM014",
+        "decision": "DENIED",
+        "reviewer_notes": "The claim could not be priced because no pricing rule exists for the submitted procedure code."
+    },
+    {
+        "claim_id": "CLM016",
+        "decision": "APPROVED",
+        "reviewer_notes": "The high billed amount was reviewed and the synthetic supporting documentation was considered sufficient."
+    },
+    {
+        "claim_id": "CLM017",
+        "decision": "DENIED",
+        "reviewer_notes": "Pricing remained unavailable after all automated retry attempts were exhausted."
+    }
+]

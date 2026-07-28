@@ -5,14 +5,18 @@ from typing import Any
 from src.audit_logger import insert_claim_event
 from src.database import (
     count_prior_member_claims,
+    enqueue_manual_review,
     enqueue_pricing_retry,
+    fetch_pending_manual_review_items,
     fetch_pending_retry_queue_items,
     find_prior_duplicate_claim_id,
     get_connection,
+    mark_manual_review_in_review,
     mark_retry_cancelled,
     mark_retry_exhausted,
     mark_retry_pending,
     mark_retry_succeeded,
+    resolve_manual_review,
     start_retry_attempt,
     update_claim_allowed_amount,
     update_claim_status,
@@ -26,6 +30,11 @@ from src.fraud_review import (
     FraudReviewOutcome,
     FraudReviewRules,
     evaluate_fraud_review,
+)
+from src.manual_review import (
+    ManualReviewDecision,
+    ManualReviewStatus,
+    ReviewerDecision,
 )
 from src.pricing import (
     PricingDecision,
@@ -66,6 +75,9 @@ class ClaimWorkflowResult:
     retry_count: int
     retry_status: RetryStatus | None
     retry_reason: str | None
+    manual_review_status: ManualReviewStatus | None
+    manual_review_reason: str | None
+    reviewer_notes: str | None
 
 
 def transition_claim(
@@ -79,8 +91,6 @@ def transition_claim(
 ) -> None:
     """
     Validate, persist, and audit one claim-state transition.
-
-    The state update and audit event use the same database transaction.
     """
     validate_transition(
         current_status,
@@ -122,6 +132,9 @@ def build_result(
     retry_count: int = 0,
     retry_status: RetryStatus | None = None,
     retry_reason: str | None = None,
+    manual_review_status: ManualReviewStatus | None = None,
+    manual_review_reason: str | None = None,
+    reviewer_notes: str | None = None,
 ) -> ClaimWorkflowResult:
     """
     Build a consistently structured workflow result.
@@ -141,6 +154,9 @@ def build_result(
         retry_count=retry_count,
         retry_status=retry_status,
         retry_reason=retry_reason,
+        manual_review_status=manual_review_status,
+        manual_review_reason=manual_review_reason,
+        reviewer_notes=reviewer_notes,
     )
 
 
@@ -157,11 +173,6 @@ def complete_successful_pricing(
 ) -> ClaimWorkflowResult:
     """
     Complete successful pricing, fraud review, and final routing.
-
-    This helper is used by both:
-
-    - Initial successful pricing
-    - Successful retry pricing
     """
     claim_id = claim.get(
         "claim_id",
@@ -230,6 +241,14 @@ def complete_successful_pricing(
             retry_attempt=retry_attempt,
         )
 
+        enqueue_manual_review(
+            cursor=cursor,
+            claim_id=claim_id,
+            review_reason=(
+                fraud_review_decision.reason
+            ),
+        )
+
         return build_result(
             claim_id=claim_id,
             final_status=ClaimStatus.MANUAL_REVIEW,
@@ -256,6 +275,12 @@ def complete_successful_pricing(
                 pricing_decision.reason
                 if retry_attempt is not None
                 else None
+            ),
+            manual_review_status=(
+                ManualReviewStatus.PENDING
+            ),
+            manual_review_reason=(
+                fraud_review_decision.reason
             ),
         )
 
@@ -309,10 +334,7 @@ def process_claim(
     fraud_review_rules: FraudReviewRules,
 ) -> ClaimWorkflowResult:
     """
-    Process one claim through the initial workflow.
-
-    Temporary pricing failures are inserted into retry_queue and stop
-    temporarily at PRICING_RETRY.
+    Process one claim through its initial workflow attempt.
     """
     claim_id = claim.get(
         "claim_id",
@@ -554,7 +576,6 @@ def process_claim(
                     pricing_reason=(
                         pricing_decision.reason
                     ),
-                    retry_count=0,
                     retry_status=RetryStatus.PENDING,
                     retry_reason=(
                         pricing_decision.reason
@@ -576,6 +597,14 @@ def process_claim(
                     ),
                 )
 
+                enqueue_manual_review(
+                    cursor=cursor,
+                    claim_id=claim_id,
+                    review_reason=(
+                        pricing_decision.reason
+                    ),
+                )
+
                 return build_result(
                     claim_id=claim_id,
                     final_status=ClaimStatus.MANUAL_REVIEW,
@@ -589,6 +618,12 @@ def process_claim(
                         pricing_decision.outcome
                     ),
                     pricing_reason=(
+                        pricing_decision.reason
+                    ),
+                    manual_review_status=(
+                        ManualReviewStatus.PENDING
+                    ),
+                    manual_review_reason=(
                         pricing_decision.reason
                     ),
                 )
@@ -651,9 +686,6 @@ def process_retry_queue(
 ) -> dict[str, ClaimWorkflowResult]:
     """
     Process all pending pricing retry records.
-
-    Returns:
-        A mapping of claim ID to the final result after retry handling.
     """
     claim_index = {
         claim["claim_id"].strip(): claim
@@ -816,6 +848,16 @@ def process_retry_queue(
                             retry_attempt=retry_count,
                         )
 
+                        enqueue_manual_review(
+                            cursor=cursor,
+                            claim_id=(
+                                queue_item.claim_id
+                            ),
+                            review_reason=(
+                                pricing_decision.reason
+                            ),
+                        )
+
                         mark_retry_cancelled(
                             cursor=cursor,
                             retry_id=(
@@ -854,6 +896,12 @@ def process_retry_queue(
                                 RetryStatus.CANCELLED
                             ),
                             retry_reason=(
+                                pricing_decision.reason
+                            ),
+                            manual_review_status=(
+                                ManualReviewStatus.PENDING
+                            ),
+                            manual_review_reason=(
                                 pricing_decision.reason
                             ),
                         )
@@ -904,12 +952,22 @@ def process_retry_queue(
                         current_status=(
                             ClaimStatus.PRICING_RETRY
                         ),
-                        new_status=ClaimStatus.FAILED,
+                        new_status=(
+                            ClaimStatus.MANUAL_REVIEW
+                        ),
                         processing_step="PRICING_RETRY",
                         event_reason=(
                             exhausted_reason
                         ),
                         retry_attempt=retry_count,
+                    )
+
+                    enqueue_manual_review(
+                        cursor=cursor,
+                        claim_id=queue_item.claim_id,
+                        review_reason=(
+                            exhausted_reason
+                        ),
                     )
 
                     mark_retry_exhausted(
@@ -926,7 +984,9 @@ def process_retry_queue(
                         queue_item.claim_id
                     ] = build_result(
                         claim_id=queue_item.claim_id,
-                        final_status=ClaimStatus.FAILED,
+                        final_status=(
+                            ClaimStatus.MANUAL_REVIEW
+                        ),
                         eligibility_reason=(
                             initial_result
                             .eligibility_reason
@@ -948,8 +1008,193 @@ def process_retry_queue(
                         retry_reason=(
                             exhausted_reason
                         ),
+                        manual_review_status=(
+                            ManualReviewStatus.PENDING
+                        ),
+                        manual_review_reason=(
+                            exhausted_reason
+                        ),
                     )
 
                     break
 
     return retry_results
+
+
+def process_manual_review_queue(
+    current_results: list[ClaimWorkflowResult],
+    decision_index: dict[
+        str,
+        ManualReviewDecision,
+    ],
+) -> dict[str, ClaimWorkflowResult]:
+    """
+    Process pending manual-review queue items.
+
+    Queue items without a configured synthetic reviewer decision remain
+    in PENDING status.
+
+    Returns:
+        A mapping of claim ID to the final reviewer outcome.
+    """
+    current_result_index = {
+        result.claim_id: result
+        for result in current_results
+    }
+
+    manual_review_results: dict[
+        str,
+        ClaimWorkflowResult,
+    ] = {}
+
+    pending_reviews = (
+        fetch_pending_manual_review_items()
+    )
+
+    for review in pending_reviews:
+        claim_id = str(
+            review["claim_id"]
+        )
+
+        review_id = int(
+            review["review_id"]
+        )
+
+        review_reason = str(
+            review["review_reason"]
+        )
+
+        reviewer_decision = (
+            decision_index.get(
+                claim_id
+            )
+        )
+
+        if reviewer_decision is None:
+            continue
+
+        current_result = (
+            current_result_index.get(
+                claim_id
+            )
+        )
+
+        if current_result is None:
+            raise RuntimeError(
+                f"Current workflow result for manual-review "
+                f"claim '{claim_id}' was not found."
+            )
+
+        if (
+            reviewer_decision.decision
+            == ReviewerDecision.APPROVED
+        ):
+            new_status = ClaimStatus.APPROVED
+
+        else:
+            new_status = ClaimStatus.DENIED
+
+        event_reason = (
+            f"Manual reviewer selected "
+            f"{reviewer_decision.decision.value}. "
+            f"Reviewer notes: "
+            f"{reviewer_decision.reviewer_notes}"
+        )
+
+        retry_attempt = (
+            current_result.retry_count
+            if current_result.retry_count > 0
+            else None
+        )
+
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                mark_manual_review_in_review(
+                    cursor=cursor,
+                    review_id=review_id,
+                )
+
+                transition_claim(
+                    cursor=cursor,
+                    claim_id=claim_id,
+                    current_status=(
+                        ClaimStatus.MANUAL_REVIEW
+                    ),
+                    new_status=new_status,
+                    processing_step="MANUAL_REVIEW",
+                    event_reason=event_reason,
+                    retry_attempt=retry_attempt,
+                )
+
+                resolve_manual_review(
+                    cursor=cursor,
+                    review_id=review_id,
+                    decision=(
+                        reviewer_decision
+                        .decision
+                        .value
+                    ),
+                    reviewer_notes=(
+                        reviewer_decision
+                        .reviewer_notes
+                    ),
+                )
+
+        manual_review_results[
+            claim_id
+        ] = build_result(
+            claim_id=claim_id,
+            final_status=new_status,
+            validation_errors=(
+                current_result.validation_errors
+            ),
+            eligibility_reason=(
+                current_result.eligibility_reason
+            ),
+            duplicate_reason=(
+                current_result.duplicate_reason
+            ),
+            duplicate_of_claim_id=(
+                current_result.duplicate_of_claim_id
+            ),
+            pricing_outcome=(
+                current_result.pricing_outcome
+            ),
+            pricing_reason=(
+                current_result.pricing_reason
+            ),
+            allowed_amount=(
+                current_result.allowed_amount
+            ),
+            fraud_review_outcome=(
+                current_result.fraud_review_outcome
+            ),
+            fraud_review_reason=(
+                current_result.fraud_review_reason
+            ),
+            retry_count=(
+                current_result.retry_count
+            ),
+            retry_status=(
+                current_result.retry_status
+            ),
+            retry_reason=(
+                current_result.retry_reason
+            ),
+            manual_review_status=(
+                ManualReviewStatus(
+                    reviewer_decision
+                    .decision
+                    .value
+                )
+            ),
+            manual_review_reason=(
+                current_result.manual_review_reason
+                or review_reason
+            ),
+            reviewer_notes=(
+                reviewer_decision.reviewer_notes
+            ),
+        )
+
+    return manual_review_results

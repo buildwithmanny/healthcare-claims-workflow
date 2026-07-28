@@ -13,6 +13,8 @@ from src.database import (
     fetch_duplicate_decisions,
     fetch_eligibility_decisions,
     fetch_fraud_review_decisions,
+    fetch_manual_review_decisions,
+    fetch_manual_review_queue_items,
     fetch_priced_claims,
     fetch_pricing_decisions,
     fetch_retry_queue_items,
@@ -25,6 +27,9 @@ from src.eligibility import (
 )
 from src.fraud_review import (
     build_fraud_review_rules,
+)
+from src.manual_review import (
+    build_manual_review_decision_index,
 )
 from src.pricing import (
     build_pricing_rule_index,
@@ -41,6 +46,7 @@ from src.validator import (
 from src.workflow_engine import (
     ClaimWorkflowResult,
     process_claim_batch,
+    process_manual_review_queue,
     process_retry_queue,
 )
 
@@ -128,6 +134,24 @@ def print_claim_results(
             print(
                 f"  Retry result: "
                 f"{result.retry_reason}"
+            )
+
+        if result.manual_review_status is not None:
+            print(
+                f"  Manual review status: "
+                f"{result.manual_review_status.value}"
+            )
+
+        if result.manual_review_reason is not None:
+            print(
+                f"  Manual review reason: "
+                f"{result.manual_review_reason}"
+            )
+
+        if result.reviewer_notes is not None:
+            print(
+                f"  Reviewer notes: "
+                f"{result.reviewer_notes}"
             )
 
 
@@ -252,7 +276,7 @@ def print_priced_claims() -> None:
 
 def print_retry_queue() -> None:
     """
-    Print retry counts, limits, errors, and final outcomes.
+    Print retry counts, limits, errors, and outcomes.
     """
     retry_items = fetch_retry_queue_items()
 
@@ -290,6 +314,47 @@ def print_retry_queue() -> None:
             print(
                 f"  Last error: "
                 f"{item['last_error']}"
+            )
+
+
+def print_manual_review_queue() -> None:
+    """
+    Print manual-review reasons, decisions, and notes.
+    """
+    review_items = (
+        fetch_manual_review_queue_items()
+    )
+
+    print("\nManual Review Queue Final State")
+    print("-------------------------------")
+
+    if not review_items:
+        print(
+            "No manual-review queue records were created."
+        )
+        return
+
+    for item in review_items:
+        print(
+            f"{item['claim_id']}: "
+            f"{item['review_status']}"
+        )
+
+        print(
+            f"  Review reason: "
+            f"{item['review_reason']}"
+        )
+
+        if item["reviewer_notes"] is not None:
+            print(
+                f"  Reviewer notes: "
+                f"{item['reviewer_notes']}"
+            )
+
+        if item["resolved_at"] is not None:
+            print(
+                f"  Resolved at: "
+                f"{item['resolved_at']}"
             )
 
 
@@ -432,25 +497,28 @@ def print_claim_journey(
         )
 
 
-def merge_retry_results(
-    initial_results: list[ClaimWorkflowResult],
-    retry_results: dict[str, ClaimWorkflowResult],
+def merge_result_overrides(
+    base_results: list[ClaimWorkflowResult],
+    overrides: dict[
+        str,
+        ClaimWorkflowResult,
+    ],
 ) -> list[ClaimWorkflowResult]:
     """
-    Replace temporary initial results with their final retry outcomes.
+    Replace earlier workflow results with later queue outcomes.
     """
     return [
-        retry_results.get(
+        overrides.get(
             result.claim_id,
             result,
         )
-        for result in initial_results
+        for result in base_results
     ]
 
 
 def main() -> None:
     """
-    Run the Day 9 healthcare claims workflow.
+    Run the Day 10 healthcare claims workflow.
     """
     print("Healthcare Claims Workflow")
     print("==========================")
@@ -498,6 +566,14 @@ def main() -> None:
         project_data["review_rules"]
     )
 
+    manual_review_decision_index = (
+        build_manual_review_decision_index(
+            project_data[
+                "manual_review_decisions"
+            ]
+        )
+    )
+
     print(
         "\nPhase 1: Processing initial claim attempts..."
     )
@@ -531,9 +607,30 @@ def main() -> None:
         ),
     )
 
-    final_results = merge_retry_results(
-        initial_results=initial_results,
-        retry_results=retry_results,
+    post_retry_results = (
+        merge_result_overrides(
+            base_results=initial_results,
+            overrides=retry_results,
+        )
+    )
+
+    print(
+        "\nPhase 3: Processing the "
+        "manual-review queue..."
+    )
+
+    manual_review_results = (
+        process_manual_review_queue(
+            current_results=post_retry_results,
+            decision_index=(
+                manual_review_decision_index
+            ),
+        )
+    )
+
+    final_results = merge_result_overrides(
+        base_results=post_retry_results,
+        overrides=manual_review_results,
     )
 
     report_paths = generate_reports()
@@ -549,6 +646,8 @@ def main() -> None:
     print_database_summary()
 
     print_retry_queue()
+
+    print_manual_review_queue()
 
     print_audit_section(
         "Validation Failure Audit History",
@@ -575,12 +674,21 @@ def main() -> None:
         fetch_fraud_review_decisions(),
     )
 
+    print_audit_section(
+        "Manual Review Decision Audit History",
+        fetch_manual_review_decisions(),
+    )
+
     print_priced_claims()
 
     print_invalid_transition_guard()
 
     print_claim_journey(
-        "CLM015"
+        "CLM014"
+    )
+
+    print_claim_journey(
+        "CLM016"
     )
 
     print_claim_journey(
@@ -592,7 +700,7 @@ def main() -> None:
     )
 
     print(
-        "\nDay 9 workflow completed successfully."
+        "\nDay 10 workflow completed successfully."
     )
 
 

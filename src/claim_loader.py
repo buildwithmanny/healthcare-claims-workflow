@@ -97,7 +97,7 @@ def load_members() -> list[dict[str, str]]:
 
 def load_diagnosis_codes() -> list[dict[str, str]]:
     """
-    Load the synthetic diagnosis-code reference file.
+    Load the synthetic diagnosis-code reference data.
     """
     return load_csv("diagnosis_codes.csv")
 
@@ -111,9 +111,18 @@ def load_pricing_rules() -> list[dict[str, Any]]:
 
 def load_review_rules() -> dict[str, Any]:
     """
-    Load synthetic review rules.
+    Load synthetic fraud and business-review rules.
     """
     return load_json("review_rules.json")
+
+
+def load_manual_review_decisions() -> list[dict[str, Any]]:
+    """
+    Load synthetic reviewer decisions.
+    """
+    return load_json(
+        "manual_review_decisions.json"
+    )
 
 
 def load_project_data() -> dict[str, Any]:
@@ -129,6 +138,9 @@ def load_project_data() -> dict[str, Any]:
         "diagnosis_codes": load_diagnosis_codes(),
         "pricing_rules": load_pricing_rules(),
         "review_rules": load_review_rules(),
+        "manual_review_decisions": (
+            load_manual_review_decisions()
+        ),
     }
 
 
@@ -142,17 +154,25 @@ def print_source_summary(
     print("-------------------")
 
     for source_name, source_data in project_data.items():
-        if isinstance(source_data, list):
+        if isinstance(
+            source_data,
+            list,
+        ):
             print(
                 f"{source_name}: "
                 f"{len(source_data)} records loaded"
             )
 
-        elif isinstance(source_data, dict):
+        elif isinstance(
+            source_data,
+            dict,
+        ):
             print(
                 f"{source_name}: "
                 f"{len(source_data)} rule groups loaded"
             )
 
         else:
-            print(f"{source_name}: loaded")
+            print(
+                f"{source_name}: loaded"
+            )

@@ -427,9 +427,6 @@ def enqueue_pricing_retry(
 ) -> int:
     """
     Add a temporary pricing failure to the retry queue.
-
-    The initial retry count is zero because no retry attempt has
-    occurred yet.
     """
     if max_retries <= 0:
         raise ValueError(
@@ -483,8 +480,6 @@ def start_retry_attempt(
 ) -> dict[str, Any]:
     """
     Atomically begin one pending retry attempt.
-
-    The retry count is incremented when the attempt begins.
     """
     cursor.execute(
         """
@@ -661,6 +656,165 @@ def mark_retry_cancelled(
         )
 
 
+def enqueue_manual_review(
+    cursor: Any,
+    claim_id: str,
+    review_reason: str,
+) -> int:
+    """
+    Add a claim to the manual-review queue.
+
+    If the claim already has an active PENDING or IN_REVIEW queue item,
+    the existing review ID is returned.
+    """
+    cleaned_reason = review_reason.strip()
+
+    if not cleaned_reason:
+        raise ValueError(
+            "Manual review requires a review_reason."
+        )
+
+    cursor.execute(
+        """
+        SELECT
+            review_id
+        FROM manual_review_queue
+        WHERE claim_id = %s
+          AND review_status IN (
+              'PENDING',
+              'IN_REVIEW'
+          )
+        ORDER BY review_id
+        LIMIT 1;
+        """,
+        (
+            claim_id,
+        ),
+    )
+
+    existing_review = cursor.fetchone()
+
+    if existing_review is not None:
+        return int(
+            existing_review[0]
+        )
+
+    cursor.execute(
+        """
+        INSERT INTO manual_review_queue (
+            claim_id,
+            review_reason,
+            review_status,
+            reviewer_notes
+        )
+        VALUES (
+            %s,
+            %s,
+            'PENDING',
+            NULL
+        )
+        RETURNING review_id;
+        """,
+        (
+            claim_id,
+            cleaned_reason,
+        ),
+    )
+
+    result = cursor.fetchone()
+
+    if result is None:
+        raise RuntimeError(
+            "PostgreSQL did not return a manual-review ID."
+        )
+
+    return int(
+        result[0]
+    )
+
+
+def mark_manual_review_in_review(
+    cursor: Any,
+    review_id: int,
+) -> None:
+    """
+    Move one queue item from PENDING to IN_REVIEW.
+    """
+    cursor.execute(
+        """
+        UPDATE manual_review_queue
+        SET
+            review_status = 'IN_REVIEW'
+        WHERE review_id = %s
+          AND review_status = 'PENDING';
+        """,
+        (
+            review_id,
+        ),
+    )
+
+    if cursor.rowcount != 1:
+        raise RuntimeError(
+            f"Manual-review item '{review_id}' could not "
+            "be moved to IN_REVIEW."
+        )
+
+
+def resolve_manual_review(
+    cursor: Any,
+    review_id: int,
+    decision: str,
+    reviewer_notes: str,
+) -> None:
+    """
+    Resolve one manual-review queue item.
+
+    The decision must be APPROVED or DENIED.
+    """
+    normalized_decision = (
+        decision.strip().upper()
+    )
+
+    if normalized_decision not in {
+        "APPROVED",
+        "DENIED",
+    }:
+        raise ValueError(
+            "Manual-review decision must be "
+            "APPROVED or DENIED."
+        )
+
+    cleaned_notes = reviewer_notes.strip()
+
+    if not cleaned_notes:
+        raise ValueError(
+            "Manual-review resolution requires reviewer_notes."
+        )
+
+    cursor.execute(
+        """
+        UPDATE manual_review_queue
+        SET
+            review_status = %s,
+            reviewer_notes = %s,
+            resolved_at = CURRENT_TIMESTAMP
+        WHERE review_id = %s
+          AND review_status = 'IN_REVIEW';
+        """,
+        (
+            normalized_decision,
+            cleaned_notes,
+            review_id,
+        ),
+    )
+
+    if cursor.rowcount != 1:
+        raise RuntimeError(
+            f"Manual-review item '{review_id}' could not "
+            "be resolved."
+        )
+
+
 def reset_workflow_data() -> None:
     """
     Clear workflow records for repeatable local development runs.
@@ -710,7 +864,7 @@ def fetch_pending_retry_queue_items() -> list[dict[str, Any]]:
 
 def fetch_retry_queue_items() -> list[dict[str, Any]]:
     """
-    Return all retry queue records and final outcomes.
+    Return all retry queue records and outcomes.
     """
     with get_connection() as connection:
         with connection.cursor(
@@ -731,6 +885,63 @@ def fetch_retry_queue_items() -> list[dict[str, Any]]:
                     updated_at
                 FROM retry_queue
                 ORDER BY retry_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_pending_manual_review_items() -> list[dict[str, Any]]:
+    """
+    Return manual-review items waiting for a reviewer.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    review_id,
+                    claim_id,
+                    review_reason,
+                    review_status,
+                    reviewer_notes,
+                    created_at,
+                    resolved_at
+                FROM manual_review_queue
+                WHERE review_status = 'PENDING'
+                ORDER BY review_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_manual_review_queue_items() -> list[dict[str, Any]]:
+    """
+    Return all manual-review queue records and outcomes.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    review_id,
+                    claim_id,
+                    review_reason,
+                    review_status,
+                    reviewer_notes,
+                    created_at,
+                    resolved_at
+                FROM manual_review_queue
+                ORDER BY review_id;
                 """
             )
 
@@ -852,7 +1063,7 @@ def fetch_duplicate_decisions() -> list[dict[str, Any]]:
 
 def fetch_pricing_decisions() -> list[dict[str, Any]]:
     """
-    Return initial pricing audit events.
+    Return initial pricing and retry pricing audit events.
     """
     with get_connection() as connection:
         with connection.cursor(
@@ -902,6 +1113,35 @@ def fetch_fraud_review_decisions() -> list[dict[str, Any]]:
                     created_at
                 FROM claim_events
                 WHERE processing_step = 'FRAUD_REVIEW'
+                ORDER BY claim_id, event_id;
+                """
+            )
+
+            return list(
+                cursor.fetchall()
+            )
+
+
+def fetch_manual_review_decisions() -> list[dict[str, Any]]:
+    """
+    Return manual-review decision audit events.
+    """
+    with get_connection() as connection:
+        with connection.cursor(
+            row_factory=dict_row,
+        ) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    claim_id,
+                    previous_status,
+                    new_status,
+                    processing_step,
+                    event_reason,
+                    retry_attempt,
+                    created_at
+                FROM claim_events
+                WHERE processing_step = 'MANUAL_REVIEW'
                 ORDER BY claim_id, event_id;
                 """
             )
@@ -971,7 +1211,7 @@ def fetch_claim_report_rows() -> list[dict[str, Any]]:
 
 def fetch_exception_report_rows() -> list[dict[str, Any]]:
     """
-    Return claims that did not reach automatic approval.
+    Return claims that did not reach approval.
     """
     with get_connection() as connection:
         with connection.cursor(

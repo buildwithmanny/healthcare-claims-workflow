@@ -1,6 +1,6 @@
 {
     "version": "1.0",
-    "exception_count": 12,
+    "exception_count": 11,
     "claims": [
         {
             "claim_id": "CLM002",
@@ -100,17 +100,7 @@
             "service_date": "2026-07-22",
             "billed_amount": "650.00",
             "allowed_amount": null,
-            "current_status": "MANUAL_REVIEW"
-        },
-        {
-            "claim_id": "CLM016",
-            "member_id": "M004",
-            "provider_id": "PRV009",
-            "procedure_code": "PROC1003",
-            "service_date": "2026-07-24",
-            "billed_amount": "1500.00",
-            "allowed_amount": "600.00",
-            "current_status": "MANUAL_REVIEW"
+            "current_status": "DENIED"
         },
         {
             "claim_id": "CLM017",
@@ -120,7 +110,7 @@
             "service_date": "2026-07-26",
             "billed_amount": "750.00",
             "allowed_amount": null,
-            "current_status": "FAILED"
+            "current_status": "DENIED"
         }
     ]
 }
