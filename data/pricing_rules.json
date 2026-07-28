@@ -34,5 +34,11 @@
         "allowed_amount": 550.00,
         "pricing_method": "SIMULATED_EXTERNAL_SERVICE",
         "temporary_failures_before_success": 10
+    },
+    {
+        "procedure_code": "PROC1007",
+        "allowed_amount": 325.00,
+        "pricing_method": "SPECIAL_REVIEW_RATE",
+        "temporary_failures_before_success": 0
     }
 ]

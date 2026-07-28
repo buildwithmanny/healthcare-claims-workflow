@@ -1,0 +1,253 @@
+{
+    "generated_at_utc": "2026-07-28T02:59:12.709189+00:00",
+    "scenario_count": 11,
+    "passed_count": 11,
+    "failed_count": 0,
+    "all_scenarios_controlled": true,
+    "scenarios": [
+        {
+            "scenario_name": "Happy path",
+            "claim_id": "CLM001",
+            "passed": true,
+            "expected_final_status": "APPROVED",
+            "actual_final_status": "APPROVED",
+            "expected_retry_status": null,
+            "actual_retry_status": null,
+            "expected_retry_count": null,
+            "actual_retry_count": null,
+            "expected_manual_review_status": null,
+            "actual_manual_review_status": null,
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "No retry record was expected or created.",
+                "No manual-review record was expected or created."
+            ],
+            "failures": []
+        },
+        {
+            "scenario_name": "Missing member ID",
+            "claim_id": "CLM007",
+            "passed": true,
+            "expected_final_status": "VALIDATION_FAILED",
+            "actual_final_status": "VALIDATION_FAILED",
+            "expected_retry_status": null,
+            "actual_retry_status": null,
+            "expected_retry_count": null,
+            "actual_retry_count": null,
+            "expected_manual_review_status": null,
+            "actual_manual_review_status": null,
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "No retry record was expected or created.",
+                "No manual-review record was expected or created."
+            ],
+            "failures": []
+        },
+        {
+            "scenario_name": "Invalid diagnosis code",
+            "claim_id": "CLM008",
+            "passed": true,
+            "expected_final_status": "VALIDATION_FAILED",
+            "actual_final_status": "VALIDATION_FAILED",
+            "expected_retry_status": null,
+            "actual_retry_status": null,
+            "expected_retry_count": null,
+            "actual_retry_count": null,
+            "expected_manual_review_status": null,
+            "actual_manual_review_status": null,
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "No retry record was expected or created.",
+                "No manual-review record was expected or created."
+            ],
+            "failures": []
+        },
+        {
+            "scenario_name": "Expired eligibility",
+            "claim_id": "CLM003",
+            "passed": true,
+            "expected_final_status": "DENIED",
+            "actual_final_status": "DENIED",
+            "expected_retry_status": null,
+            "actual_retry_status": null,
+            "expected_retry_count": null,
+            "actual_retry_count": null,
+            "expected_manual_review_status": null,
+            "actual_manual_review_status": null,
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "No retry record was expected or created.",
+                "No manual-review record was expected or created."
+            ],
+            "failures": []
+        },
+        {
+            "scenario_name": "Member not found",
+            "claim_id": "CLM012",
+            "passed": true,
+            "expected_final_status": "DENIED",
+            "actual_final_status": "DENIED",
+            "expected_retry_status": null,
+            "actual_retry_status": null,
+            "expected_retry_count": null,
+            "actual_retry_count": null,
+            "expected_manual_review_status": null,
+            "actual_manual_review_status": null,
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "No retry record was expected or created.",
+                "No manual-review record was expected or created."
+            ],
+            "failures": []
+        },
+        {
+            "scenario_name": "Duplicate claim",
+            "claim_id": "CLM013",
+            "passed": true,
+            "expected_final_status": "DUPLICATE",
+            "actual_final_status": "DUPLICATE",
+            "expected_retry_status": null,
+            "actual_retry_status": null,
+            "expected_retry_count": null,
+            "actual_retry_count": null,
+            "expected_manual_review_status": null,
+            "actual_manual_review_status": null,
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "No retry record was expected or created.",
+                "No manual-review record was expected or created."
+            ],
+            "failures": []
+        },
+        {
+            "scenario_name": "Missing pricing rule",
+            "claim_id": "CLM014",
+            "passed": true,
+            "expected_final_status": "DENIED",
+            "actual_final_status": "DENIED",
+            "expected_retry_status": null,
+            "actual_retry_status": null,
+            "expected_retry_count": null,
+            "actual_retry_count": null,
+            "expected_manual_review_status": "DENIED",
+            "actual_manual_review_status": "DENIED",
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "No retry record was expected or created.",
+                "Manual-review status matched."
+            ],
+            "failures": []
+        },
+        {
+            "scenario_name": "Pricing timeout with retry success",
+            "claim_id": "CLM015",
+            "passed": true,
+            "expected_final_status": "APPROVED",
+            "actual_final_status": "APPROVED",
+            "expected_retry_status": "SUCCEEDED",
+            "actual_retry_status": "SUCCEEDED",
+            "expected_retry_count": 1,
+            "actual_retry_count": 1,
+            "expected_manual_review_status": null,
+            "actual_manual_review_status": null,
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "Retry status matched.",
+                "Retry count matched.",
+                "No manual-review record was expected or created."
+            ],
+            "failures": []
+        },
+        {
+            "scenario_name": "High-risk claim",
+            "claim_id": "CLM016",
+            "passed": true,
+            "expected_final_status": "APPROVED",
+            "actual_final_status": "APPROVED",
+            "expected_retry_status": null,
+            "actual_retry_status": null,
+            "expected_retry_count": null,
+            "actual_retry_count": null,
+            "expected_manual_review_status": "APPROVED",
+            "actual_manual_review_status": "APPROVED",
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "No retry record was expected or created.",
+                "Manual-review status matched."
+            ],
+            "failures": []
+        },
+        {
+            "scenario_name": "Retry exhaustion",
+            "claim_id": "CLM017",
+            "passed": true,
+            "expected_final_status": "DENIED",
+            "actual_final_status": "DENIED",
+            "expected_retry_status": "EXHAUSTED",
+            "actual_retry_status": "EXHAUSTED",
+            "expected_retry_count": 3,
+            "actual_retry_count": 3,
+            "expected_manual_review_status": "DENIED",
+            "actual_manual_review_status": "DENIED",
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "Retry status matched.",
+                "Retry count matched.",
+                "Manual-review status matched."
+            ],
+            "failures": []
+        },
+        {
+            "scenario_name": "Procedure-based manual review",
+            "claim_id": "CLM018",
+            "passed": true,
+            "expected_final_status": "APPROVED",
+            "actual_final_status": "APPROVED",
+            "expected_retry_status": null,
+            "actual_retry_status": null,
+            "expected_retry_count": null,
+            "actual_retry_count": null,
+            "expected_manual_review_status": "APPROVED",
+            "actual_manual_review_status": "APPROVED",
+            "checks": [
+                "Final claim status matched.",
+                "Every audit event contained a step, reason, and timestamp.",
+                "Required state path was present.",
+                "Required audit reasons were present.",
+                "No retry record was expected or created.",
+                "Manual-review status matched."
+            ],
+            "failures": []
+        }
+    ]
+}

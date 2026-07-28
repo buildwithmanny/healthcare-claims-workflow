@@ -125,6 +125,15 @@ def load_manual_review_decisions() -> list[dict[str, Any]]:
     )
 
 
+def load_chaos_scenarios() -> list[dict[str, Any]]:
+    """
+    Load expected outcomes for controlled chaos scenarios.
+    """
+    return load_json(
+        "chaos_scenarios.json"
+    )
+
+
 def load_project_data() -> dict[str, Any]:
     """
     Load every synthetic data source required by the workflow.
@@ -141,6 +150,7 @@ def load_project_data() -> dict[str, Any]:
         "manual_review_decisions": (
             load_manual_review_decisions()
         ),
+        "chaos_scenarios": load_chaos_scenarios(),
     }
 
 

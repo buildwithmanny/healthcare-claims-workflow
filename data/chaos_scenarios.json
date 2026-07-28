@@ -1,0 +1,225 @@
+[
+    {
+        "scenario_name": "Happy path",
+        "claim_id": "CLM001",
+        "expected_final_status": "APPROVED",
+        "expected_retry_status": null,
+        "expected_retry_count": null,
+        "expected_manual_review_status": null,
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "ELIGIBILITY_CHECK",
+            "DUPLICATE_CHECK",
+            "PRICING",
+            "FRAUD_REVIEW",
+            "APPROVED"
+        ],
+        "required_reason_fragments": [
+            "passed all configured fraud and business-review rules"
+        ]
+    },
+    {
+        "scenario_name": "Missing member ID",
+        "claim_id": "CLM007",
+        "expected_final_status": "VALIDATION_FAILED",
+        "expected_retry_status": null,
+        "expected_retry_count": null,
+        "expected_manual_review_status": null,
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "VALIDATION_FAILED"
+        ],
+        "required_reason_fragments": [
+            "member_id is required"
+        ]
+    },
+    {
+        "scenario_name": "Invalid diagnosis code",
+        "claim_id": "CLM008",
+        "expected_final_status": "VALIDATION_FAILED",
+        "expected_retry_status": null,
+        "expected_retry_count": null,
+        "expected_manual_review_status": null,
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "VALIDATION_FAILED"
+        ],
+        "required_reason_fragments": [
+            "invalid or inactive"
+        ]
+    },
+    {
+        "scenario_name": "Expired eligibility",
+        "claim_id": "CLM003",
+        "expected_final_status": "DENIED",
+        "expected_retry_status": null,
+        "expected_retry_count": null,
+        "expected_manual_review_status": null,
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "ELIGIBILITY_CHECK",
+            "INELIGIBLE",
+            "DENIED"
+        ],
+        "required_reason_fragments": [
+            "coverage was not active"
+        ]
+    },
+    {
+        "scenario_name": "Member not found",
+        "claim_id": "CLM012",
+        "expected_final_status": "DENIED",
+        "expected_retry_status": null,
+        "expected_retry_count": null,
+        "expected_manual_review_status": null,
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "ELIGIBILITY_CHECK",
+            "INELIGIBLE",
+            "DENIED"
+        ],
+        "required_reason_fragments": [
+            "was not found in the member reference data"
+        ]
+    },
+    {
+        "scenario_name": "Duplicate claim",
+        "claim_id": "CLM013",
+        "expected_final_status": "DUPLICATE",
+        "expected_retry_status": null,
+        "expected_retry_count": null,
+        "expected_manual_review_status": null,
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "ELIGIBILITY_CHECK",
+            "DUPLICATE_CHECK",
+            "DUPLICATE"
+        ],
+        "required_reason_fragments": [
+            "matched prior claim 'CLM001'"
+        ]
+    },
+    {
+        "scenario_name": "Missing pricing rule",
+        "claim_id": "CLM014",
+        "expected_final_status": "DENIED",
+        "expected_retry_status": null,
+        "expected_retry_count": null,
+        "expected_manual_review_status": "DENIED",
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "ELIGIBILITY_CHECK",
+            "DUPLICATE_CHECK",
+            "PRICING",
+            "MANUAL_REVIEW",
+            "DENIED"
+        ],
+        "required_reason_fragments": [
+            "no pricing rule was configured",
+            "manual reviewer selected DENIED"
+        ]
+    },
+    {
+        "scenario_name": "Pricing timeout with retry success",
+        "claim_id": "CLM015",
+        "expected_final_status": "APPROVED",
+        "expected_retry_status": "SUCCEEDED",
+        "expected_retry_count": 1,
+        "expected_manual_review_status": null,
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "ELIGIBILITY_CHECK",
+            "DUPLICATE_CHECK",
+            "PRICING",
+            "PRICING_RETRY",
+            "PRICING",
+            "FRAUD_REVIEW",
+            "APPROVED"
+        ],
+        "required_reason_fragments": [
+            "simulated pricing-service timeout",
+            "pricing retry attempt 1 of 3 started",
+            "pricing completed successfully"
+        ]
+    },
+    {
+        "scenario_name": "High-risk claim",
+        "claim_id": "CLM016",
+        "expected_final_status": "APPROVED",
+        "expected_retry_status": null,
+        "expected_retry_count": null,
+        "expected_manual_review_status": "APPROVED",
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "ELIGIBILITY_CHECK",
+            "DUPLICATE_CHECK",
+            "PRICING",
+            "FRAUD_REVIEW",
+            "MANUAL_REVIEW",
+            "APPROVED"
+        ],
+        "required_reason_fragments": [
+            "exceeds the manual-review threshold",
+            "manual reviewer selected APPROVED"
+        ]
+    },
+    {
+        "scenario_name": "Retry exhaustion",
+        "claim_id": "CLM017",
+        "expected_final_status": "DENIED",
+        "expected_retry_status": "EXHAUSTED",
+        "expected_retry_count": 3,
+        "expected_manual_review_status": "DENIED",
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "ELIGIBILITY_CHECK",
+            "DUPLICATE_CHECK",
+            "PRICING",
+            "PRICING_RETRY",
+            "PRICING",
+            "PRICING_RETRY",
+            "PRICING",
+            "PRICING_RETRY",
+            "PRICING",
+            "PRICING_RETRY",
+            "MANUAL_REVIEW",
+            "DENIED"
+        ],
+        "required_reason_fragments": [
+            "retry attempts exhausted",
+            "manual reviewer selected DENIED"
+        ]
+    },
+    {
+        "scenario_name": "Procedure-based manual review",
+        "claim_id": "CLM018",
+        "expected_final_status": "APPROVED",
+        "expected_retry_status": null,
+        "expected_retry_count": null,
+        "expected_manual_review_status": "APPROVED",
+        "required_status_path": [
+            "RECEIVED",
+            "VALIDATING",
+            "ELIGIBILITY_CHECK",
+            "DUPLICATE_CHECK",
+            "PRICING",
+            "FRAUD_REVIEW",
+            "MANUAL_REVIEW",
+            "APPROVED"
+        ],
+        "required_reason_fragments": [
+            "configured to require manual review",
+            "manual reviewer selected APPROVED"
+        ]
+    }
+]

@@ -2,6 +2,13 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from src.chaos_runner import (
+    ChaosScenarioResult,
+    assert_all_scenarios_controlled,
+    build_chaos_scenarios,
+    evaluate_chaos_scenarios,
+    write_chaos_report,
+)
 from src.claim_loader import (
     load_project_data,
     print_source_summary,
@@ -10,15 +17,8 @@ from src.database import (
     fetch_claim_current_state,
     fetch_claim_history,
     fetch_claim_status_summary,
-    fetch_duplicate_decisions,
-    fetch_eligibility_decisions,
-    fetch_fraud_review_decisions,
-    fetch_manual_review_decisions,
     fetch_manual_review_queue_items,
-    fetch_priced_claims,
-    fetch_pricing_decisions,
     fetch_retry_queue_items,
-    fetch_validation_failures,
     reset_workflow_data,
     test_connection,
 )
@@ -51,14 +51,33 @@ from src.workflow_engine import (
 )
 
 
-def print_claim_results(
+def merge_result_overrides(
+    base_results: list[ClaimWorkflowResult],
+    overrides: dict[
+        str,
+        ClaimWorkflowResult,
+    ],
+) -> list[ClaimWorkflowResult]:
+    """
+    Replace earlier results with later queue outcomes.
+    """
+    return [
+        overrides.get(
+            result.claim_id,
+            result,
+        )
+        for result in base_results
+    ]
+
+
+def print_final_results(
     results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print the final outcome for every claim.
+    Print the final status and major operational outcomes.
     """
-    print("\nFinal Claim Workflow Results")
-    print("----------------------------")
+    print("\nFinal Claim Results")
+    print("-------------------")
 
     for result in results:
         print(
@@ -66,21 +85,12 @@ def print_claim_results(
             f"{result.final_status.value}"
         )
 
-        for error in result.validation_errors:
+        if result.validation_errors:
             print(
-                f"  Validation: {error}"
-            )
-
-        if result.eligibility_reason is not None:
-            print(
-                f"  Eligibility: "
-                f"{result.eligibility_reason}"
-            )
-
-        if result.duplicate_reason is not None:
-            print(
-                f"  Duplicate check: "
-                f"{result.duplicate_reason}"
+                "  Validation errors: "
+                + "; ".join(
+                    result.validation_errors
+                )
             )
 
         if result.duplicate_of_claim_id is not None:
@@ -95,28 +105,10 @@ def print_claim_results(
                 f"{result.pricing_outcome.value}"
             )
 
-        if result.pricing_reason is not None:
-            print(
-                f"  Pricing: "
-                f"{result.pricing_reason}"
-            )
-
         if result.allowed_amount is not None:
             print(
                 f"  Allowed amount: "
                 f"${result.allowed_amount:,.2f}"
-            )
-
-        if result.fraud_review_outcome is not None:
-            print(
-                f"  Fraud review outcome: "
-                f"{result.fraud_review_outcome.value}"
-            )
-
-        if result.fraud_review_reason is not None:
-            print(
-                f"  Fraud review: "
-                f"{result.fraud_review_reason}"
             )
 
         if result.retry_status is not None:
@@ -130,22 +122,10 @@ def print_claim_results(
                 f"{result.retry_count}"
             )
 
-        if result.retry_reason is not None:
-            print(
-                f"  Retry result: "
-                f"{result.retry_reason}"
-            )
-
         if result.manual_review_status is not None:
             print(
-                f"  Manual review status: "
+                f"  Manual review: "
                 f"{result.manual_review_status.value}"
-            )
-
-        if result.manual_review_reason is not None:
-            print(
-                f"  Manual review reason: "
-                f"{result.manual_review_reason}"
             )
 
         if result.reviewer_notes is not None:
@@ -159,7 +139,7 @@ def print_result_totals(
     results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print final-status totals.
+    Print final-status totals from in-memory workflow results.
     """
     totals = Counter(
         result.final_status.value
@@ -179,230 +159,149 @@ def print_result_totals(
 
 def print_database_summary() -> None:
     """
-    Print current PostgreSQL status totals.
+    Print final-status totals stored in PostgreSQL.
     """
-    summary = fetch_claim_status_summary()
+    rows = fetch_claim_status_summary()
 
     print("\nPostgreSQL Status Summary")
     print("-------------------------")
 
-    for row in summary:
+    for row in rows:
         print(
             f"{row['current_status']}: "
             f"{row['claim_count']}"
         )
 
 
-def print_audit_section(
-    title: str,
-    decisions: list[dict[str, Any]],
-) -> None:
-    """
-    Print one collection of workflow audit events.
-    """
-    print(
-        f"\n{title}"
-    )
-
-    print(
-        "-" * len(
-            title
-        )
-    )
-
-    if not decisions:
-        print(
-            "No matching audit events were recorded."
-        )
-        return
-
-    for decision in decisions:
-        print(
-            f"{decision['claim_id']}: "
-            f"{decision['previous_status']} -> "
-            f"{decision['new_status']}"
-        )
-
-        if decision.get(
-            "retry_attempt"
-        ) is not None:
-            print(
-                f"  Retry attempt: "
-                f"{decision['retry_attempt']}"
-            )
-
-        print(
-            f"  Reason: "
-            f"{decision['event_reason']}"
-        )
-
-
-def print_priced_claims() -> None:
-    """
-    Print claims that received successful pricing.
-    """
-    claims = fetch_priced_claims()
-
-    print("\nSuccessfully Priced Claims")
-    print("--------------------------")
-
-    if not claims:
-        print(
-            "No claims received an allowed amount."
-        )
-        return
-
-    for claim in claims:
-        print(
-            f"{claim['claim_id']}: "
-            f"{claim['procedure_code']}"
-        )
-
-        print(
-            f"  Billed amount: "
-            f"${claim['billed_amount']:,.2f}"
-        )
-
-        print(
-            f"  Allowed amount: "
-            f"${claim['allowed_amount']:,.2f}"
-        )
-
-        print(
-            f"  Current status: "
-            f"{claim['current_status']}"
-        )
-
-
 def print_retry_queue() -> None:
     """
-    Print retry counts, limits, errors, and outcomes.
+    Print retry queue outcomes.
     """
-    retry_items = fetch_retry_queue_items()
+    rows = fetch_retry_queue_items()
 
-    print("\nRetry Queue Final State")
-    print("-----------------------")
+    print("\nRetry Queue Outcomes")
+    print("--------------------")
 
-    if not retry_items:
+    if not rows:
         print(
-            "No retry queue records were created."
+            "No retry records were created."
         )
         return
 
-    for item in retry_items:
+    for row in rows:
         print(
-            f"{item['claim_id']}: "
-            f"{item['retry_status']}"
+            f"{row['claim_id']}: "
+            f"{row['retry_status']}"
         )
 
         print(
             f"  Failed step: "
-            f"{item['failed_step']}"
+            f"{row['failed_step']}"
         )
 
         print(
             f"  Retry count: "
-            f"{item['retry_count']}"
+            f"{row['retry_count']} of "
+            f"{row['max_retries']}"
         )
 
-        print(
-            f"  Maximum retries: "
-            f"{item['max_retries']}"
-        )
-
-        if item["last_error"] is not None:
+        if row["last_error"] is not None:
             print(
                 f"  Last error: "
-                f"{item['last_error']}"
+                f"{row['last_error']}"
             )
 
 
 def print_manual_review_queue() -> None:
     """
-    Print manual-review reasons, decisions, and notes.
+    Print manual-review queue outcomes.
     """
-    review_items = (
-        fetch_manual_review_queue_items()
-    )
+    rows = fetch_manual_review_queue_items()
 
-    print("\nManual Review Queue Final State")
-    print("-------------------------------")
+    print("\nManual Review Outcomes")
+    print("----------------------")
 
-    if not review_items:
+    if not rows:
         print(
-            "No manual-review queue records were created."
+            "No manual-review records were created."
         )
         return
 
-    for item in review_items:
+    for row in rows:
         print(
-            f"{item['claim_id']}: "
-            f"{item['review_status']}"
+            f"{row['claim_id']}: "
+            f"{row['review_status']}"
         )
 
         print(
-            f"  Review reason: "
-            f"{item['review_reason']}"
+            f"  Reason: "
+            f"{row['review_reason']}"
         )
 
-        if item["reviewer_notes"] is not None:
+        if row["reviewer_notes"] is not None:
             print(
                 f"  Reviewer notes: "
-                f"{item['reviewer_notes']}"
-            )
-
-        if item["resolved_at"] is not None:
-            print(
-                f"  Resolved at: "
-                f"{item['resolved_at']}"
+                f"{row['reviewer_notes']}"
             )
 
 
-def print_generated_reports(
-    report_paths: dict[str, Path],
+def print_chaos_results(
+    results: list[ChaosScenarioResult],
 ) -> None:
     """
-    Print all generated report locations.
+    Print the controlled-outcome verification matrix.
     """
-    print("\nGenerated Reports")
-    print("-----------------")
+    print("\nChaos Scenario Verification")
+    print("---------------------------")
 
-    for report_name, report_path in (
-        report_paths.items()
-    ):
-        print(
-            f"{report_name}: "
-            f"{report_path}"
-        )
-
-
-def print_invalid_transition_guard() -> None:
-    """
-    Demonstrate that a validation failure cannot move to pricing.
-    """
-    print("\nInvalid Transition Guard")
-    print("------------------------")
-
-    try:
-        validate_transition(
-            ClaimStatus.VALIDATION_FAILED,
-            ClaimStatus.PRICING,
-        )
-
-    except InvalidStateTransitionError as error:
-        print(
-            "Blocked invalid transition as expected."
+    for result in results:
+        outcome = (
+            "PASS"
+            if result.passed
+            else "FAIL"
         )
 
         print(
-            f"  {error}"
+            f"{outcome} | "
+            f"{result.claim_id} | "
+            f"{result.scenario_name}"
         )
 
-        return
+        print(
+            f"  Final status: "
+            f"{result.actual_final_status}"
+        )
 
-    raise RuntimeError(
-        "The state manager unexpectedly allowed "
-        "VALIDATION_FAILED -> PRICING."
+        if result.actual_retry_status is not None:
+            print(
+                f"  Retry: "
+                f"{result.actual_retry_status} "
+                f"({result.actual_retry_count} attempts)"
+            )
+
+        if (
+            result.actual_manual_review_status
+            is not None
+        ):
+            print(
+                f"  Manual review: "
+                f"{result.actual_manual_review_status}"
+            )
+
+        for failure in result.failures:
+            print(
+                f"  Failure: {failure}"
+            )
+
+    passed_count = sum(
+        1
+        for result in results
+        if result.passed
+    )
+
+    print(
+        "\nControlled scenarios: "
+        f"{passed_count} of {len(results)}"
     )
 
 
@@ -410,7 +309,7 @@ def print_claim_journey(
     claim_id: str,
 ) -> None:
     """
-    Print the current state and complete audit history for one claim.
+    Print current state and complete audit history for one claim.
     """
     current_state = fetch_claim_current_state(
         claim_id
@@ -439,28 +338,9 @@ def print_claim_journey(
         return
 
     print(
-        "Where is this claim now?"
-    )
-
-    print(
-        f"  Current status: "
+        f"Current status: "
         f"{current_state['current_status']}"
     )
-
-    print(
-        f"  Current record last updated: "
-        f"{current_state['updated_at']}"
-    )
-
-    print(
-        "\nWhere has this claim been?"
-    )
-
-    if not history:
-        print(
-            "  No audit events were found."
-        )
-        return
 
     for event in history:
         previous_status = (
@@ -470,13 +350,12 @@ def print_claim_journey(
         )
 
         print(
-            f"  Event {event['event_id']}: "
-            f"{previous_status} -> "
+            f"  {previous_status} -> "
             f"{event['new_status']}"
         )
 
         print(
-            f"    Processing step: "
+            f"    Step: "
             f"{event['processing_step']}"
         )
 
@@ -497,28 +376,57 @@ def print_claim_journey(
         )
 
 
-def merge_result_overrides(
-    base_results: list[ClaimWorkflowResult],
-    overrides: dict[
-        str,
-        ClaimWorkflowResult,
-    ],
-) -> list[ClaimWorkflowResult]:
+def print_invalid_transition_guard() -> None:
     """
-    Replace earlier workflow results with later queue outcomes.
+    Confirm that a failed validation cannot jump into pricing.
     """
-    return [
-        overrides.get(
-            result.claim_id,
-            result,
+    print("\nInvalid Transition Guard")
+    print("------------------------")
+
+    try:
+        validate_transition(
+            ClaimStatus.VALIDATION_FAILED,
+            ClaimStatus.PRICING,
         )
-        for result in base_results
-    ]
+
+    except InvalidStateTransitionError as error:
+        print(
+            "PASS | Invalid transition was blocked."
+        )
+
+        print(
+            f"  {error}"
+        )
+
+        return
+
+    raise RuntimeError(
+        "VALIDATION_FAILED -> PRICING "
+        "was unexpectedly allowed."
+    )
+
+
+def print_generated_reports(
+    report_paths: dict[str, Path],
+) -> None:
+    """
+    Print generated report locations.
+    """
+    print("\nGenerated Reports")
+    print("-----------------")
+
+    for report_name, report_path in (
+        report_paths.items()
+    ):
+        print(
+            f"{report_name}: "
+            f"{report_path}"
+        )
 
 
 def main() -> None:
     """
-    Run the Day 10 healthcare claims workflow.
+    Run the Day 11 controlled-chaos workflow.
     """
     print("Healthcare Claims Workflow")
     print("==========================")
@@ -540,7 +448,7 @@ def main() -> None:
         f"database: {database_name}"
     )
 
-    print("\nResetting local workflow demo data...")
+    print("\nResetting local workflow data...")
 
     reset_workflow_data()
 
@@ -574,8 +482,12 @@ def main() -> None:
         )
     )
 
+    chaos_scenarios = build_chaos_scenarios(
+        project_data["chaos_scenarios"]
+    )
+
     print(
-        "\nPhase 1: Processing initial claim attempts..."
+        "\nPhase 1: Running initial claim processing..."
     )
 
     initial_results = process_claim_batch(
@@ -593,7 +505,7 @@ def main() -> None:
     )
 
     print(
-        "\nPhase 2: Processing the retry queue..."
+        "\nPhase 2: Running retry processing..."
     )
 
     retry_results = process_retry_queue(
@@ -615,8 +527,7 @@ def main() -> None:
     )
 
     print(
-        "\nPhase 3: Processing the "
-        "manual-review queue..."
+        "\nPhase 3: Running manual-review processing..."
     )
 
     manual_review_results = (
@@ -633,9 +544,25 @@ def main() -> None:
         overrides=manual_review_results,
     )
 
+    print(
+        "\nPhase 4: Verifying controlled outcomes..."
+    )
+
+    chaos_results = evaluate_chaos_scenarios(
+        chaos_scenarios
+    )
+
     report_paths = generate_reports()
 
-    print_claim_results(
+    chaos_report_path = write_chaos_report(
+        chaos_results
+    )
+
+    report_paths[
+        "chaos_scenario_report"
+    ] = chaos_report_path
+
+    print_final_results(
         final_results
     )
 
@@ -649,58 +576,39 @@ def main() -> None:
 
     print_manual_review_queue()
 
-    print_audit_section(
-        "Validation Failure Audit History",
-        fetch_validation_failures(),
+    print_chaos_results(
+        chaos_results
     )
-
-    print_audit_section(
-        "Eligibility Audit History",
-        fetch_eligibility_decisions(),
-    )
-
-    print_audit_section(
-        "Duplicate Check Audit History",
-        fetch_duplicate_decisions(),
-    )
-
-    print_audit_section(
-        "Pricing and Retry Audit History",
-        fetch_pricing_decisions(),
-    )
-
-    print_audit_section(
-        "Fraud Review Audit History",
-        fetch_fraud_review_decisions(),
-    )
-
-    print_audit_section(
-        "Manual Review Decision Audit History",
-        fetch_manual_review_decisions(),
-    )
-
-    print_priced_claims()
 
     print_invalid_transition_guard()
 
     print_claim_journey(
-        "CLM014"
-    )
-
-    print_claim_journey(
-        "CLM016"
+        "CLM015"
     )
 
     print_claim_journey(
         "CLM017"
     )
 
+    print_claim_journey(
+        "CLM018"
+    )
+
     print_generated_reports(
         report_paths
     )
 
+    assert_all_scenarios_controlled(
+        chaos_results
+    )
+
     print(
-        "\nDay 10 workflow completed successfully."
+        "\nDay 11 completed successfully."
+    )
+
+    print(
+        "Every configured chaos scenario reached "
+        "its controlled outcome."
     )
 
 

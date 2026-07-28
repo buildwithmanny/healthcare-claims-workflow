@@ -13,5 +13,10 @@
         "claim_id": "CLM017",
         "decision": "DENIED",
         "reviewer_notes": "Pricing remained unavailable after all automated retry attempts were exhausted."
+    },
+    {
+        "claim_id": "CLM018",
+        "decision": "APPROVED",
+        "reviewer_notes": "The configured procedure-code review was completed and the synthetic claim was approved."
     }
 ]
