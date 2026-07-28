@@ -1,10 +1,8 @@
 from collections import Counter
 from pathlib import Path
-from typing import Any
 
 from src.chaos_runner import (
     ChaosScenarioResult,
-    assert_all_scenarios_controlled,
     build_chaos_scenarios,
     evaluate_chaos_scenarios,
     write_chaos_report,
@@ -14,8 +12,6 @@ from src.claim_loader import (
     print_source_summary,
 )
 from src.database import (
-    fetch_claim_current_state,
-    fetch_claim_history,
     fetch_claim_status_summary,
     fetch_manual_review_queue_items,
     fetch_retry_queue_items,
@@ -35,11 +31,6 @@ from src.pricing import (
     build_pricing_rule_index,
 )
 from src.reporting import generate_reports
-from src.state_manager import (
-    ClaimStatus,
-    InvalidStateTransitionError,
-    validate_transition,
-)
 from src.validator import (
     build_active_diagnosis_codes,
 )
@@ -74,7 +65,7 @@ def print_final_results(
     results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print the final status and major operational outcomes.
+    Print the final claim statuses and major operational outcomes.
     """
     print("\nFinal Claim Results")
     print("-------------------")
@@ -134,12 +125,23 @@ def print_final_results(
                 f"{result.reviewer_notes}"
             )
 
+        if result.processing_error is not None:
+            print(
+                f"  Processing error: "
+                f"{result.processing_error}"
+            )
+
+            print(
+                "  Failure persisted: "
+                f"{result.failure_persisted}"
+            )
+
 
 def print_result_totals(
     results: list[ClaimWorkflowResult],
 ) -> None:
     """
-    Print final-status totals from in-memory workflow results.
+    Print final-status totals from in-memory results.
     """
     totals = Counter(
         result.final_status.value
@@ -195,21 +197,10 @@ def print_retry_queue() -> None:
         )
 
         print(
-            f"  Failed step: "
-            f"{row['failed_step']}"
-        )
-
-        print(
             f"  Retry count: "
             f"{row['retry_count']} of "
             f"{row['max_retries']}"
         )
-
-        if row["last_error"] is not None:
-            print(
-                f"  Last error: "
-                f"{row['last_error']}"
-            )
 
 
 def print_manual_review_queue() -> None:
@@ -238,18 +229,12 @@ def print_manual_review_queue() -> None:
             f"{row['review_reason']}"
         )
 
-        if row["reviewer_notes"] is not None:
-            print(
-                f"  Reviewer notes: "
-                f"{row['reviewer_notes']}"
-            )
-
 
 def print_chaos_results(
     results: list[ChaosScenarioResult],
 ) -> None:
     """
-    Print the controlled-outcome verification matrix.
+    Print controlled-outcome verification results.
     """
     print("\nChaos Scenario Verification")
     print("---------------------------")
@@ -266,27 +251,6 @@ def print_chaos_results(
             f"{result.claim_id} | "
             f"{result.scenario_name}"
         )
-
-        print(
-            f"  Final status: "
-            f"{result.actual_final_status}"
-        )
-
-        if result.actual_retry_status is not None:
-            print(
-                f"  Retry: "
-                f"{result.actual_retry_status} "
-                f"({result.actual_retry_count} attempts)"
-            )
-
-        if (
-            result.actual_manual_review_status
-            is not None
-        ):
-            print(
-                f"  Manual review: "
-                f"{result.actual_manual_review_status}"
-            )
 
         for failure in result.failures:
             print(
@@ -305,104 +269,43 @@ def print_chaos_results(
     )
 
 
-def print_claim_journey(
-    claim_id: str,
-) -> None:
+def print_processing_errors(
+    results: list[ClaimWorkflowResult],
+) -> int:
     """
-    Print current state and complete audit history for one claim.
+    Print unexpected claim-level failures.
+
+    Returns:
+        Number of unexpected processing failures.
     """
-    current_state = fetch_claim_current_state(
-        claim_id
-    )
+    failed_results = [
+        result
+        for result in results
+        if result.processing_error is not None
+    ]
 
-    history = fetch_claim_history(
-        claim_id
-    )
+    print("\nUnexpected Processing Errors")
+    print("----------------------------")
 
-    title = f"Claim Journey — {claim_id}"
-
-    print(
-        f"\n{title}"
-    )
-
-    print(
-        "-" * len(
-            title
-        )
-    )
-
-    if current_state is None:
+    if not failed_results:
         print(
-            "Claim was not found."
+            "No unexpected claim-processing errors occurred."
         )
-        return
+        return 0
 
-    print(
-        f"Current status: "
-        f"{current_state['current_status']}"
-    )
-
-    for event in history:
-        previous_status = (
-            event["previous_status"]
-            if event["previous_status"] is not None
-            else "START"
+    for result in failed_results:
+        print(
+            f"{result.claim_id}: "
+            f"{result.processing_error}"
         )
 
         print(
-            f"  {previous_status} -> "
-            f"{event['new_status']}"
+            "  Persisted as FAILED: "
+            f"{result.failure_persisted}"
         )
 
-        print(
-            f"    Step: "
-            f"{event['processing_step']}"
-        )
-
-        if event["retry_attempt"] is not None:
-            print(
-                f"    Retry attempt: "
-                f"{event['retry_attempt']}"
-            )
-
-        print(
-            f"    Why: "
-            f"{event['event_reason']}"
-        )
-
-        print(
-            f"    When: "
-            f"{event['created_at']}"
-        )
-
-
-def print_invalid_transition_guard() -> None:
-    """
-    Confirm that a failed validation cannot jump into pricing.
-    """
-    print("\nInvalid Transition Guard")
-    print("------------------------")
-
-    try:
-        validate_transition(
-            ClaimStatus.VALIDATION_FAILED,
-            ClaimStatus.PRICING,
-        )
-
-    except InvalidStateTransitionError as error:
-        print(
-            "PASS | Invalid transition was blocked."
-        )
-
-        print(
-            f"  {error}"
-        )
-
-        return
-
-    raise RuntimeError(
-        "VALIDATION_FAILED -> PRICING "
-        "was unexpectedly allowed."
+    return len(
+        failed_results
     )
 
 
@@ -424,9 +327,13 @@ def print_generated_reports(
         )
 
 
-def main() -> None:
+def run_application() -> int:
     """
-    Run the Day 11 controlled-chaos workflow.
+    Run the complete Day 12 workflow.
+
+    Returns:
+        0 when all claims and scenario checks complete successfully.
+        1 when unexpected claim failures or scenario failures occur.
     """
     print("Healthcare Claims Workflow")
     print("==========================")
@@ -487,7 +394,7 @@ def main() -> None:
     )
 
     print(
-        "\nPhase 1: Running initial claim processing..."
+        "\nPhase 1: Running isolated claim processing..."
     )
 
     initial_results = process_claim_batch(
@@ -505,7 +412,7 @@ def main() -> None:
     )
 
     print(
-        "\nPhase 2: Running retry processing..."
+        "\nPhase 2: Running isolated retry processing..."
     )
 
     retry_results = process_retry_queue(
@@ -527,7 +434,8 @@ def main() -> None:
     )
 
     print(
-        "\nPhase 3: Running manual-review processing..."
+        "\nPhase 3: Running isolated "
+        "manual-review processing..."
     )
 
     manual_review_results = (
@@ -580,37 +488,106 @@ def main() -> None:
         chaos_results
     )
 
-    print_invalid_transition_guard()
-
-    print_claim_journey(
-        "CLM015"
-    )
-
-    print_claim_journey(
-        "CLM017"
-    )
-
-    print_claim_journey(
-        "CLM018"
+    processing_error_count = (
+        print_processing_errors(
+            final_results
+        )
     )
 
     print_generated_reports(
         report_paths
     )
 
-    assert_all_scenarios_controlled(
-        chaos_results
+    chaos_failure_count = sum(
+        1
+        for result in chaos_results
+        if not result.passed
+    )
+
+    if (
+        processing_error_count > 0
+        or chaos_failure_count > 0
+    ):
+        print(
+            "\nDay 12 completed with controlled errors."
+        )
+
+        print(
+            "The remaining claims continued processing, "
+            "but review the failure output above."
+        )
+
+        return 1
+
+    print(
+        "\nDay 12 workflow completed successfully."
     )
 
     print(
-        "\nDay 11 completed successfully."
+        "All claims were isolated, all configured "
+        "scenarios were controlled, and no unexpected "
+        "error stopped the batch."
     )
 
-    print(
-        "Every configured chaos scenario reached "
-        "its controlled outcome."
-    )
+    return 0
+
+
+def main() -> int:
+    """
+    Application boundary with clear top-level error handling.
+    """
+    try:
+        return run_application()
+
+    except FileNotFoundError as error:
+        print(
+            "\nApplication configuration error"
+        )
+
+        print(
+            "A required project file could not be found."
+        )
+
+        print(
+            f"Details: {error}"
+        )
+
+        return 1
+
+    except ValueError as error:
+        print(
+            "\nApplication data or configuration error"
+        )
+
+        print(
+            f"Details: {error}"
+        )
+
+        return 1
+
+    except Exception as error:
+        print(
+            "\nUnexpected application-level failure"
+        )
+
+        print(
+            "Claim-level failures are isolated, but the "
+            "application encountered a broader system error."
+        )
+
+        print(
+            f"Error type: "
+            f"{type(error).__name__}"
+        )
+
+        print(
+            f"Details: {error}"
+        )
+
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(
+        main()
+    )

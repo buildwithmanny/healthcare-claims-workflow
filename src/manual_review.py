@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from src.state_manager import ClaimStatus
+
 
 class ManualReviewStatus(StrEnum):
     """
@@ -33,6 +35,23 @@ class ManualReviewDecision:
     claim_id: str
     decision: ReviewerDecision
     reviewer_notes: str
+
+
+def reviewer_decision_to_claim_status(
+    decision: ReviewerDecision,
+) -> ClaimStatus:
+    """
+    Convert a reviewer decision into the final claim status.
+    """
+    if decision == ReviewerDecision.APPROVED:
+        return ClaimStatus.APPROVED
+
+    if decision == ReviewerDecision.DENIED:
+        return ClaimStatus.DENIED
+
+    raise ValueError(
+        f"Unsupported reviewer decision: {decision}"
+    )
 
 
 def build_manual_review_decision_index(
