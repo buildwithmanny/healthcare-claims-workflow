@@ -1,116 +1,297 @@
 {
-    "version": "1.0",
-    "exception_count": 11,
-    "claims": [
-        {
-            "claim_id": "CLM002",
-            "member_id": "M002",
-            "provider_id": "PRV002",
-            "procedure_code": "PROC1002",
-            "service_date": "2026-07-03",
-            "billed_amount": "350.00",
-            "allowed_amount": null,
-            "current_status": "DENIED"
+    "generated_at_utc": "2026-07-28T04:10:01.642177+00:00",
+    "report_version": "1.0",
+    "categories": {
+        "validation_failures": {
+            "event_count": 5,
+            "affected_claim_count": 5,
+            "affected_claim_ids": [
+                "CLM007",
+                "CLM008",
+                "CLM009",
+                "CLM010",
+                "CLM011"
+            ],
+            "details": [
+                {
+                    "claim_id": "CLM007",
+                    "member_id": null,
+                    "provider_id": "PRV001",
+                    "diagnosis_code": "DX001",
+                    "procedure_code": "PROC1001",
+                    "service_date": "2026-07-13",
+                    "current_status": "VALIDATION_FAILED",
+                    "event_reason": "member_id is required.",
+                    "created_at": "2026-07-27T21:10:01.082391-07:00"
+                },
+                {
+                    "claim_id": "CLM008",
+                    "member_id": "M002",
+                    "provider_id": "PRV002",
+                    "diagnosis_code": "DX999",
+                    "procedure_code": "PROC1002",
+                    "service_date": "2026-07-15",
+                    "current_status": "VALIDATION_FAILED",
+                    "event_reason": "diagnosis_code 'DX999' is invalid or inactive.",
+                    "created_at": "2026-07-27T21:10:01.092710-07:00"
+                },
+                {
+                    "claim_id": "CLM009",
+                    "member_id": "M003",
+                    "provider_id": "PRV003",
+                    "diagnosis_code": "DX003",
+                    "procedure_code": null,
+                    "service_date": "2026-07-17",
+                    "current_status": "VALIDATION_FAILED",
+                    "event_reason": "procedure_code is required.",
+                    "created_at": "2026-07-27T21:10:01.103967-07:00"
+                },
+                {
+                    "claim_id": "CLM010",
+                    "member_id": "M004",
+                    "provider_id": "PRV004",
+                    "diagnosis_code": "DX004",
+                    "procedure_code": "PROC1004",
+                    "service_date": null,
+                    "current_status": "VALIDATION_FAILED",
+                    "event_reason": "service_date is required.",
+                    "created_at": "2026-07-27T21:10:01.114914-07:00"
+                },
+                {
+                    "claim_id": "CLM011",
+                    "member_id": "M005",
+                    "provider_id": "PRV005",
+                    "diagnosis_code": "DX001",
+                    "procedure_code": "PROC1001",
+                    "service_date": "2026-07-21",
+                    "current_status": "VALIDATION_FAILED",
+                    "event_reason": "billed_amount must be greater than zero.",
+                    "created_at": "2026-07-27T21:10:01.127284-07:00"
+                }
+            ]
         },
-        {
-            "claim_id": "CLM003",
-            "member_id": "M003",
-            "provider_id": "PRV001",
-            "procedure_code": "PROC1003",
-            "service_date": "2026-07-05",
-            "billed_amount": "725.00",
-            "allowed_amount": null,
-            "current_status": "DENIED"
+        "eligibility_failures": {
+            "event_count": 3,
+            "affected_claim_count": 3,
+            "affected_claim_ids": [
+                "CLM002",
+                "CLM003",
+                "CLM012"
+            ],
+            "details": [
+                {
+                    "claim_id": "CLM002",
+                    "member_id": "M002",
+                    "service_date": "2026-07-03",
+                    "current_status": "DENIED",
+                    "event_reason": "Member 'M002' is not active. Current member status: INACTIVE.",
+                    "created_at": "2026-07-27T21:10:01.015953-07:00"
+                },
+                {
+                    "claim_id": "CLM003",
+                    "member_id": "M003",
+                    "service_date": "2026-07-05",
+                    "current_status": "DENIED",
+                    "event_reason": "Member 'M003' coverage was not active on service date 2026-07-05. Coverage ended 2026-06-30.",
+                    "created_at": "2026-07-27T21:10:01.028295-07:00"
+                },
+                {
+                    "claim_id": "CLM012",
+                    "member_id": "M999",
+                    "service_date": "2026-07-23",
+                    "current_status": "DENIED",
+                    "event_reason": "Member 'M999' was not found in the member reference data.",
+                    "created_at": "2026-07-27T21:10:01.140474-07:00"
+                }
+            ]
         },
-        {
-            "claim_id": "CLM007",
-            "member_id": null,
-            "provider_id": "PRV001",
-            "procedure_code": "PROC1001",
-            "service_date": "2026-07-13",
-            "billed_amount": "175.00",
-            "allowed_amount": null,
-            "current_status": "VALIDATION_FAILED"
+        "duplicates": {
+            "event_count": 1,
+            "affected_claim_count": 1,
+            "affected_claim_ids": [
+                "CLM013"
+            ],
+            "details": [
+                {
+                    "claim_id": "CLM013",
+                    "member_id": "M001",
+                    "provider_id": "PRV001",
+                    "procedure_code": "PROC1001",
+                    "service_date": "2026-07-01",
+                    "current_status": "DUPLICATE",
+                    "event_reason": "Claim matched prior claim 'CLM001' using member_id, provider_id, procedure_code, and service_date. Comparison values: member_id=M001, provider_id=PRV001, procedure_code=PROC1001, service_date=2026-07-01.",
+                    "created_at": "2026-07-27T21:10:01.154419-07:00"
+                }
+            ]
         },
-        {
-            "claim_id": "CLM008",
-            "member_id": "M002",
-            "provider_id": "PRV002",
-            "procedure_code": "PROC1002",
-            "service_date": "2026-07-15",
-            "billed_amount": "325.00",
-            "allowed_amount": null,
-            "current_status": "VALIDATION_FAILED"
+        "pricing_failures": {
+            "event_count": 7,
+            "affected_claim_count": 3,
+            "affected_claim_ids": [
+                "CLM014",
+                "CLM015",
+                "CLM017"
+            ],
+            "details": [
+                {
+                    "claim_id": "CLM014",
+                    "procedure_code": "PROC9999",
+                    "billed_amount": "650.00",
+                    "allowed_amount": null,
+                    "current_status": "DENIED",
+                    "previous_status": "PRICING",
+                    "new_status": "MANUAL_REVIEW",
+                    "retry_attempt": null,
+                    "event_reason": "Permanent pricing failure: no pricing rule was configured for procedure code 'PROC9999'.",
+                    "created_at": "2026-07-27T21:10:01.167481-07:00"
+                },
+                {
+                    "claim_id": "CLM015",
+                    "procedure_code": "PROC1005",
+                    "billed_amount": "700.00",
+                    "allowed_amount": "500.00",
+                    "current_status": "APPROVED",
+                    "previous_status": "PRICING",
+                    "new_status": "PRICING_RETRY",
+                    "retry_attempt": null,
+                    "event_reason": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1005' on pricing attempt 1.",
+                    "created_at": "2026-07-27T21:10:01.182507-07:00"
+                },
+                {
+                    "claim_id": "CLM017",
+                    "procedure_code": "PROC1006",
+                    "billed_amount": "750.00",
+                    "allowed_amount": null,
+                    "current_status": "DENIED",
+                    "previous_status": "PRICING",
+                    "new_status": "PRICING_RETRY",
+                    "retry_attempt": null,
+                    "event_reason": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 1.",
+                    "created_at": "2026-07-27T21:10:01.212684-07:00"
+                },
+                {
+                    "claim_id": "CLM017",
+                    "procedure_code": "PROC1006",
+                    "billed_amount": "750.00",
+                    "allowed_amount": null,
+                    "current_status": "DENIED",
+                    "previous_status": "PRICING",
+                    "new_status": "PRICING_RETRY",
+                    "retry_attempt": 1,
+                    "event_reason": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 2.",
+                    "created_at": "2026-07-27T21:10:01.263063-07:00"
+                },
+                {
+                    "claim_id": "CLM017",
+                    "procedure_code": "PROC1006",
+                    "billed_amount": "750.00",
+                    "allowed_amount": null,
+                    "current_status": "DENIED",
+                    "previous_status": "PRICING",
+                    "new_status": "PRICING_RETRY",
+                    "retry_attempt": 2,
+                    "event_reason": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 3.",
+                    "created_at": "2026-07-27T21:10:01.273835-07:00"
+                },
+                {
+                    "claim_id": "CLM017",
+                    "procedure_code": "PROC1006",
+                    "billed_amount": "750.00",
+                    "allowed_amount": null,
+                    "current_status": "DENIED",
+                    "previous_status": "PRICING",
+                    "new_status": "PRICING_RETRY",
+                    "retry_attempt": 3,
+                    "event_reason": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 4.",
+                    "created_at": "2026-07-27T21:10:01.284118-07:00"
+                },
+                {
+                    "claim_id": "CLM017",
+                    "procedure_code": "PROC1006",
+                    "billed_amount": "750.00",
+                    "allowed_amount": null,
+                    "current_status": "DENIED",
+                    "previous_status": "PRICING_RETRY",
+                    "new_status": "MANUAL_REVIEW",
+                    "retry_attempt": 3,
+                    "event_reason": "Pricing retry attempts exhausted after 3 of 3 allowed retries. Final error: Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 4.",
+                    "created_at": "2026-07-27T21:10:01.284118-07:00"
+                }
+            ]
         },
-        {
-            "claim_id": "CLM009",
-            "member_id": "M003",
-            "provider_id": "PRV003",
-            "procedure_code": null,
-            "service_date": "2026-07-17",
-            "billed_amount": "500.00",
-            "allowed_amount": null,
-            "current_status": "VALIDATION_FAILED"
+        "exhausted_retries": {
+            "event_count": 1,
+            "affected_claim_count": 1,
+            "affected_claim_ids": [
+                "CLM017"
+            ],
+            "details": [
+                {
+                    "retry_id": 2,
+                    "claim_id": "CLM017",
+                    "failed_step": "PRICING",
+                    "retry_count": 3,
+                    "max_retries": 3,
+                    "retry_status": "EXHAUSTED",
+                    "last_error": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 4.",
+                    "created_at": "2026-07-27T21:10:01.212684-07:00",
+                    "updated_at": "2026-07-27T21:10:01.284118-07:00"
+                }
+            ]
         },
-        {
-            "claim_id": "CLM010",
-            "member_id": "M004",
-            "provider_id": "PRV004",
-            "procedure_code": "PROC1004",
-            "service_date": null,
-            "billed_amount": "800.00",
-            "allowed_amount": null,
-            "current_status": "VALIDATION_FAILED"
+        "manual_reviews": {
+            "event_count": 4,
+            "affected_claim_count": 4,
+            "affected_claim_ids": [
+                "CLM014",
+                "CLM016",
+                "CLM017",
+                "CLM018"
+            ],
+            "details": [
+                {
+                    "review_id": 1,
+                    "claim_id": "CLM014",
+                    "review_reason": "Permanent pricing failure: no pricing rule was configured for procedure code 'PROC9999'.",
+                    "review_status": "DENIED",
+                    "reviewer_notes": "The claim could not be priced because no pricing rule exists for the submitted procedure code.",
+                    "created_at": "2026-07-27T21:10:01.167481-07:00",
+                    "resolved_at": "2026-07-27T21:10:01.305976-07:00"
+                },
+                {
+                    "review_id": 2,
+                    "claim_id": "CLM016",
+                    "review_reason": "Billed amount $1,500.00 exceeds the manual-review threshold of $1,000.00.",
+                    "review_status": "APPROVED",
+                    "reviewer_notes": "The high billed amount was reviewed and the synthetic supporting documentation was considered sufficient.",
+                    "created_at": "2026-07-27T21:10:01.196823-07:00",
+                    "resolved_at": "2026-07-27T21:10:01.314784-07:00"
+                },
+                {
+                    "review_id": 3,
+                    "claim_id": "CLM018",
+                    "review_reason": "Procedure code 'PROC1007' is configured to require manual review.",
+                    "review_status": "APPROVED",
+                    "reviewer_notes": "The configured procedure-code review was completed and the synthetic claim was approved.",
+                    "created_at": "2026-07-27T21:10:01.226540-07:00",
+                    "resolved_at": "2026-07-27T21:10:01.325912-07:00"
+                },
+                {
+                    "review_id": 4,
+                    "claim_id": "CLM017",
+                    "review_reason": "Pricing retry attempts exhausted after 3 of 3 allowed retries. Final error: Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 4.",
+                    "review_status": "DENIED",
+                    "reviewer_notes": "Pricing remained unavailable after all automated retry attempts were exhausted.",
+                    "created_at": "2026-07-27T21:10:01.284118-07:00",
+                    "resolved_at": "2026-07-27T21:10:01.334629-07:00"
+                }
+            ]
         },
-        {
-            "claim_id": "CLM011",
-            "member_id": "M005",
-            "provider_id": "PRV005",
-            "procedure_code": "PROC1001",
-            "service_date": "2026-07-21",
-            "billed_amount": "0.00",
-            "allowed_amount": null,
-            "current_status": "VALIDATION_FAILED"
-        },
-        {
-            "claim_id": "CLM012",
-            "member_id": "M999",
-            "provider_id": "PRV006",
-            "procedure_code": "PROC1001",
-            "service_date": "2026-07-23",
-            "billed_amount": "225.00",
-            "allowed_amount": null,
-            "current_status": "DENIED"
-        },
-        {
-            "claim_id": "CLM013",
-            "member_id": "M001",
-            "provider_id": "PRV001",
-            "procedure_code": "PROC1001",
-            "service_date": "2026-07-01",
-            "billed_amount": "185.00",
-            "allowed_amount": null,
-            "current_status": "DUPLICATE"
-        },
-        {
-            "claim_id": "CLM014",
-            "member_id": "M004",
-            "provider_id": "PRV007",
-            "procedure_code": "PROC9999",
-            "service_date": "2026-07-22",
-            "billed_amount": "650.00",
-            "allowed_amount": null,
-            "current_status": "DENIED"
-        },
-        {
-            "claim_id": "CLM017",
-            "member_id": "M005",
-            "provider_id": "PRV010",
-            "procedure_code": "PROC1006",
-            "service_date": "2026-07-26",
-            "billed_amount": "750.00",
-            "allowed_amount": null,
-            "current_status": "DENIED"
+        "system_errors": {
+            "event_count": 0,
+            "affected_claim_count": 0,
+            "affected_claim_ids": [],
+            "details": []
         }
-    ]
+    }
 }

@@ -1,0 +1,19 @@
+{
+    "generated_at_utc": "2026-07-28T04:10:01.540853+00:00",
+    "report_version": "1.0",
+    "claim_summary": {
+        "claims_received": 18,
+        "claims_approved": 7,
+        "claims_denied": 5,
+        "claims_rejected": 6,
+        "claims_in_manual_review": 0,
+        "claims_failed": 0,
+        "automatic_approvals": 5,
+        "reviewer_approvals": 2
+    },
+    "definitions": {
+        "claims_rejected": "VALIDATION_FAILED plus DUPLICATE claims.",
+        "claims_denied": "Claims denied by eligibility processing or manual review.",
+        "claims_in_manual_review": "Claims that currently remain in MANUAL_REVIEW."
+    }
+}

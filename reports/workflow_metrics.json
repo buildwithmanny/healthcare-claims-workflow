@@ -1,0 +1,47 @@
+{
+    "generated_at_utc": "2026-07-28T04:10:01.540853+00:00",
+    "report_version": "1.0",
+    "claim_summary": {
+        "claims_received": 18,
+        "claims_approved": 7,
+        "claims_denied": 5,
+        "claims_rejected": 6,
+        "claims_in_manual_review": 0,
+        "claims_failed": 0,
+        "automatic_approvals": 5,
+        "reviewer_approvals": 2
+    },
+    "workflow_metrics": {
+        "claims_by_status": {
+            "APPROVED": 7,
+            "DENIED": 5,
+            "DUPLICATE": 1,
+            "VALIDATION_FAILED": 5
+        },
+        "approval_percentage": 38.89,
+        "denial_percentage": 27.78,
+        "rejection_percentage": 33.33,
+        "retry_queue_records": 2,
+        "claims_requiring_retries": 2,
+        "average_retry_count": 2.0,
+        "successful_retries": 1,
+        "exhausted_retries": 1,
+        "cancelled_retries": 0,
+        "open_retries": 0,
+        "retry_success_percentage": 50.0,
+        "manual_review_volume": 4,
+        "reviewer_approvals": 2,
+        "reviewer_denials": 2,
+        "open_manual_reviews": 0,
+        "resolved_manual_reviews": 4
+    },
+    "metric_definitions": {
+        "claims_received": "All claim records stored in the claims table.",
+        "claims_rejected": "Claims ending in VALIDATION_FAILED or DUPLICATE.",
+        "claims_in_manual_review": "Claims whose current status remains MANUAL_REVIEW.",
+        "claims_requiring_retries": "Distinct claims represented in retry_queue.",
+        "average_retry_count": "Average retry_count across retry_queue records.",
+        "manual_review_volume": "Total records created in manual_review_queue.",
+        "approval_percentage": "Approved claims divided by claims received."
+    }
+}
