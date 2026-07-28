@@ -1,22 +1,73 @@
-# Environment variables and secrets
-.env
+# ============================================================
+# ENVIRONMENT VARIABLES AND LOCAL SECRETS
+# ============================================================
 
-# Python virtual environments
+.env
+.env.*
+!.env.example
+
+
+# ============================================================
+# PYTHON VIRTUAL ENVIRONMENTS
+# ============================================================
+
 .venv/
 venv/
+env/
 
-# Python cache files
+
+# ============================================================
+# PYTHON CACHE AND BUILD FILES
+# ============================================================
+
 __pycache__/
 *.py[cod]
+*$py.class
 
-# Testing cache
+build/
+dist/
+*.egg-info/
+
+
+# ============================================================
+# TEST AND COVERAGE OUTPUT
+# ============================================================
+
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
 
-# Generated application logs
-logs/*.log
 
-# macOS system files
-.DS_Store
+# ============================================================
+# TYPE-CHECKER AND LINTER CACHE
+# ============================================================
 
-# VS Code local settings
+.mypy_cache/
+.ruff_cache/
+
+
+# ============================================================
+# LOCAL LOG FILES
+# ============================================================
+
+logs/*
+!logs/.gitkeep
+
+*.log
+
+
+# ============================================================
+# EDITOR FILES
+# ============================================================
+
 .vscode/
+.idea/
+
+
+# ============================================================
+# OPERATING SYSTEM FILES
+# ============================================================
+
+.DS_Store
+Thumbs.db

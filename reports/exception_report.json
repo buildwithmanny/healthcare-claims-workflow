@@ -1,5 +1,5 @@
 {
-    "generated_at_utc": "2026-07-28T04:10:01.642177+00:00",
+    "generated_at_utc": "2026-07-28T04:23:00.324922+00:00",
     "report_version": "1.0",
     "categories": {
         "validation_failures": {
@@ -22,7 +22,7 @@
                     "service_date": "2026-07-13",
                     "current_status": "VALIDATION_FAILED",
                     "event_reason": "member_id is required.",
-                    "created_at": "2026-07-27T21:10:01.082391-07:00"
+                    "created_at": "2026-07-27T21:22:59.767776-07:00"
                 },
                 {
                     "claim_id": "CLM008",
@@ -33,7 +33,7 @@
                     "service_date": "2026-07-15",
                     "current_status": "VALIDATION_FAILED",
                     "event_reason": "diagnosis_code 'DX999' is invalid or inactive.",
-                    "created_at": "2026-07-27T21:10:01.092710-07:00"
+                    "created_at": "2026-07-27T21:22:59.777794-07:00"
                 },
                 {
                     "claim_id": "CLM009",
@@ -44,7 +44,7 @@
                     "service_date": "2026-07-17",
                     "current_status": "VALIDATION_FAILED",
                     "event_reason": "procedure_code is required.",
-                    "created_at": "2026-07-27T21:10:01.103967-07:00"
+                    "created_at": "2026-07-27T21:22:59.787639-07:00"
                 },
                 {
                     "claim_id": "CLM010",
@@ -55,7 +55,7 @@
                     "service_date": null,
                     "current_status": "VALIDATION_FAILED",
                     "event_reason": "service_date is required.",
-                    "created_at": "2026-07-27T21:10:01.114914-07:00"
+                    "created_at": "2026-07-27T21:22:59.797242-07:00"
                 },
                 {
                     "claim_id": "CLM011",
@@ -66,7 +66,7 @@
                     "service_date": "2026-07-21",
                     "current_status": "VALIDATION_FAILED",
                     "event_reason": "billed_amount must be greater than zero.",
-                    "created_at": "2026-07-27T21:10:01.127284-07:00"
+                    "created_at": "2026-07-27T21:22:59.807058-07:00"
                 }
             ]
         },
@@ -85,7 +85,7 @@
                     "service_date": "2026-07-03",
                     "current_status": "DENIED",
                     "event_reason": "Member 'M002' is not active. Current member status: INACTIVE.",
-                    "created_at": "2026-07-27T21:10:01.015953-07:00"
+                    "created_at": "2026-07-27T21:22:59.699447-07:00"
                 },
                 {
                     "claim_id": "CLM003",
@@ -93,7 +93,7 @@
                     "service_date": "2026-07-05",
                     "current_status": "DENIED",
                     "event_reason": "Member 'M003' coverage was not active on service date 2026-07-05. Coverage ended 2026-06-30.",
-                    "created_at": "2026-07-27T21:10:01.028295-07:00"
+                    "created_at": "2026-07-27T21:22:59.713148-07:00"
                 },
                 {
                     "claim_id": "CLM012",
@@ -101,7 +101,7 @@
                     "service_date": "2026-07-23",
                     "current_status": "DENIED",
                     "event_reason": "Member 'M999' was not found in the member reference data.",
-                    "created_at": "2026-07-27T21:10:01.140474-07:00"
+                    "created_at": "2026-07-27T21:22:59.817086-07:00"
                 }
             ]
         },
@@ -120,7 +120,7 @@
                     "service_date": "2026-07-01",
                     "current_status": "DUPLICATE",
                     "event_reason": "Claim matched prior claim 'CLM001' using member_id, provider_id, procedure_code, and service_date. Comparison values: member_id=M001, provider_id=PRV001, procedure_code=PROC1001, service_date=2026-07-01.",
-                    "created_at": "2026-07-27T21:10:01.154419-07:00"
+                    "created_at": "2026-07-27T21:22:59.828661-07:00"
                 }
             ]
         },
@@ -143,7 +143,7 @@
                     "new_status": "MANUAL_REVIEW",
                     "retry_attempt": null,
                     "event_reason": "Permanent pricing failure: no pricing rule was configured for procedure code 'PROC9999'.",
-                    "created_at": "2026-07-27T21:10:01.167481-07:00"
+                    "created_at": "2026-07-27T21:22:59.840675-07:00"
                 },
                 {
                     "claim_id": "CLM015",
@@ -155,7 +155,7 @@
                     "new_status": "PRICING_RETRY",
                     "retry_attempt": null,
                     "event_reason": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1005' on pricing attempt 1.",
-                    "created_at": "2026-07-27T21:10:01.182507-07:00"
+                    "created_at": "2026-07-27T21:22:59.856211-07:00"
                 },
                 {
                     "claim_id": "CLM017",
@@ -167,7 +167,7 @@
                     "new_status": "PRICING_RETRY",
                     "retry_attempt": null,
                     "event_reason": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 1.",
-                    "created_at": "2026-07-27T21:10:01.212684-07:00"
+                    "created_at": "2026-07-27T21:22:59.886652-07:00"
                 },
                 {
                     "claim_id": "CLM017",
@@ -179,7 +179,7 @@
                     "new_status": "PRICING_RETRY",
                     "retry_attempt": 1,
                     "event_reason": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 2.",
-                    "created_at": "2026-07-27T21:10:01.263063-07:00"
+                    "created_at": "2026-07-27T21:22:59.975736-07:00"
                 },
                 {
                     "claim_id": "CLM017",
@@ -191,7 +191,7 @@
                     "new_status": "PRICING_RETRY",
                     "retry_attempt": 2,
                     "event_reason": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 3.",
-                    "created_at": "2026-07-27T21:10:01.273835-07:00"
+                    "created_at": "2026-07-27T21:22:59.983818-07:00"
                 },
                 {
                     "claim_id": "CLM017",
@@ -203,7 +203,7 @@
                     "new_status": "PRICING_RETRY",
                     "retry_attempt": 3,
                     "event_reason": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 4.",
-                    "created_at": "2026-07-27T21:10:01.284118-07:00"
+                    "created_at": "2026-07-27T21:22:59.992363-07:00"
                 },
                 {
                     "claim_id": "CLM017",
@@ -215,7 +215,7 @@
                     "new_status": "MANUAL_REVIEW",
                     "retry_attempt": 3,
                     "event_reason": "Pricing retry attempts exhausted after 3 of 3 allowed retries. Final error: Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 4.",
-                    "created_at": "2026-07-27T21:10:01.284118-07:00"
+                    "created_at": "2026-07-27T21:22:59.992363-07:00"
                 }
             ]
         },
@@ -234,8 +234,8 @@
                     "max_retries": 3,
                     "retry_status": "EXHAUSTED",
                     "last_error": "Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 4.",
-                    "created_at": "2026-07-27T21:10:01.212684-07:00",
-                    "updated_at": "2026-07-27T21:10:01.284118-07:00"
+                    "created_at": "2026-07-27T21:22:59.886652-07:00",
+                    "updated_at": "2026-07-27T21:22:59.992363-07:00"
                 }
             ]
         },
@@ -255,8 +255,8 @@
                     "review_reason": "Permanent pricing failure: no pricing rule was configured for procedure code 'PROC9999'.",
                     "review_status": "DENIED",
                     "reviewer_notes": "The claim could not be priced because no pricing rule exists for the submitted procedure code.",
-                    "created_at": "2026-07-27T21:10:01.167481-07:00",
-                    "resolved_at": "2026-07-27T21:10:01.305976-07:00"
+                    "created_at": "2026-07-27T21:22:59.840675-07:00",
+                    "resolved_at": "2026-07-27T21:23:00.011380-07:00"
                 },
                 {
                     "review_id": 2,
@@ -264,8 +264,8 @@
                     "review_reason": "Billed amount $1,500.00 exceeds the manual-review threshold of $1,000.00.",
                     "review_status": "APPROVED",
                     "reviewer_notes": "The high billed amount was reviewed and the synthetic supporting documentation was considered sufficient.",
-                    "created_at": "2026-07-27T21:10:01.196823-07:00",
-                    "resolved_at": "2026-07-27T21:10:01.314784-07:00"
+                    "created_at": "2026-07-27T21:22:59.871051-07:00",
+                    "resolved_at": "2026-07-27T21:23:00.019243-07:00"
                 },
                 {
                     "review_id": 3,
@@ -273,8 +273,8 @@
                     "review_reason": "Procedure code 'PROC1007' is configured to require manual review.",
                     "review_status": "APPROVED",
                     "reviewer_notes": "The configured procedure-code review was completed and the synthetic claim was approved.",
-                    "created_at": "2026-07-27T21:10:01.226540-07:00",
-                    "resolved_at": "2026-07-27T21:10:01.325912-07:00"
+                    "created_at": "2026-07-27T21:22:59.900523-07:00",
+                    "resolved_at": "2026-07-27T21:23:00.027573-07:00"
                 },
                 {
                     "review_id": 4,
@@ -282,8 +282,8 @@
                     "review_reason": "Pricing retry attempts exhausted after 3 of 3 allowed retries. Final error: Temporary pricing failure: simulated pricing-service timeout for procedure code 'PROC1006' on pricing attempt 4.",
                     "review_status": "DENIED",
                     "reviewer_notes": "Pricing remained unavailable after all automated retry attempts were exhausted.",
-                    "created_at": "2026-07-27T21:10:01.284118-07:00",
-                    "resolved_at": "2026-07-27T21:10:01.334629-07:00"
+                    "created_at": "2026-07-27T21:22:59.992363-07:00",
+                    "resolved_at": "2026-07-27T21:23:00.036030-07:00"
                 }
             ]
         },

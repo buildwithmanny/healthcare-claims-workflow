@@ -1,18 +1,18 @@
 # Healthcare Claims Workflow
 
-A Python and PostgreSQL workflow simulation that processes synthetic healthcare claims through validation, eligibility, duplicate detection, pricing, fraud and business-rule review, retry handling, manual review, approval, audit history, and operational reporting.
+A stateful healthcare claims-processing simulation built with Python and PostgreSQL.
 
-This project is designed as a portfolio demonstration of workflow engineering, state management, exception handling, relational data modeling, SQL reporting, and operational process design.
+The system processes synthetic claims through validation, eligibility, duplicate detection, pricing, fraud and business-rule review, bounded retries, manual review, approval, audit history, automated testing, controlled-chaos verification, and operational reporting.
 
-> All claims, members, rules, decisions, and identifiers in this repository are synthetic. This project does not contain protected health information, proprietary adjudication logic, or production healthcare data.
+> All records, rules, decisions, amounts, identifiers, and scenarios in this repository are synthetic. The project contains no protected health information, proprietary adjudication logic, or production healthcare data.
 
 ---
 
 ## Project Overview
 
-The Healthcare Claims Workflow models how a claim moves through a controlled sequence of business and technical processing steps.
+The Healthcare Claims Workflow demonstrates how an operational process can be modeled as an explicit state machine rather than a collection of disconnected scripts.
 
-A valid claim can move through the complete happy path:
+A successful claim moves through the complete automated path:
 
 ```text
 RECEIVED
@@ -30,7 +30,7 @@ FRAUD_REVIEW
 APPROVED
 ```
 
-Claims that cannot continue automatically are routed into controlled outcomes such as:
+Claims that cannot continue automatically receive controlled outcomes such as:
 
 ```text
 VALIDATION_FAILED
@@ -41,11 +41,11 @@ MANUAL_REVIEW
 FAILED
 ```
 
-The system records every status transition and can answer:
+The workflow can answer four operational questions:
 
 ```text
 Where is the claim now?
-Where has it been?
+Where has the claim been?
 Why did its status change?
 When did the change occur?
 ```
@@ -54,167 +54,126 @@ When did the change occur?
 
 ## Business Problem
 
-Claims-processing workflows rarely follow only a clean happy path.
+Claims-processing systems rarely follow only a clean happy path.
 
-Real operational systems must handle conditions such as:
+Operational workflows must handle:
 
 - Missing required information
 - Invalid reference codes
-- Inactive or expired member coverage
+- Inactive members
+- Expired coverage
 - Duplicate submissions
 - Missing pricing configuration
-- Temporary service timeouts
+- Temporary pricing timeouts
 - Retry exhaustion
 - High-risk claims
-- Manual-review decisions
+- Manual reviewer decisions
 - Unexpected technical failures
 
-Without explicit state management, these conditions can produce inconsistent statuses, untracked failures, repeated work, or claims that become stuck without a clear owner.
+Without controlled states, queues, and audit history, claims can become stuck, silently fail, repeat processing, or lose the explanation behind a decision.
 
-This project addresses that problem by building a workflow in which:
+This project addresses that problem by ensuring:
 
 1. Every claim has one current state.
 2. Only approved state transitions are allowed.
-3. Every transition is recorded in an audit table.
+3. Every transition is recorded.
 4. Temporary failures can be retried.
-5. Nonrecoverable exceptions can be routed to manual review.
-6. One unexpected claim error does not stop the entire batch.
-7. Operational reports summarize volume, outcomes, retries, and exceptions.
+5. Permanent failures can be routed to manual review.
+6. Reviewer decisions produce final outcomes.
+7. One unexpected claim failure does not stop the remaining batch.
+8. Reports summarize workflow activity and operational exceptions.
 
 ---
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-    A[CSV and JSON Data] --> B[Claim Loader]
-    B --> C[Workflow Engine]
+flowchart TD
+    A[Claims and Reference Data] --> B[Claim Intake]
+    B --> C[Validation]
+    C --> D[Eligibility]
+    D --> E[Duplicate Check]
+    E --> F[Pricing]
 
-    C --> D[Validation]
-    D --> E[Eligibility]
-    E --> F[Duplicate Detection]
-    F --> G[Pricing]
-    G --> H[Fraud and Rules Review]
+    F -->|Success| G[Fraud Review]
+    F -->|Temporary Failure| H[Retry Queue]
+    H --> F
+    F -->|Permanent Failure| I[Manual Review]
 
-    G --> I[Retry Queue]
-    I --> G
+    G -->|Low Risk| J[Approved]
+    G -->|High Risk| I
 
-    G --> J[Manual Review Queue]
-    H --> J
+    I -->|Reviewer Approves| J
+    I -->|Reviewer Denies| K[Denied]
 
-    H --> K[Approval]
-    J --> K
-    J --> L[Denial]
+    B -.-> L[(PostgreSQL)]
+    C -.-> L
+    D -.-> L
+    E -.-> L
+    F -.-> L
+    G -.-> L
+    H -.-> L
+    I -.-> L
 
-    C --> M[(PostgreSQL)]
-    M --> N[Audit History]
-    M --> O[Operational Reports]
+    L --> M[Audit History]
+    L --> N[Operational Reports]
 ```
 
-### Main components
-
-| Component | Responsibility |
-|---|---|
-| `claim_loader.py` | Loads claims and reference data from CSV and JSON |
-| `validator.py` | Validates required fields, dates, amounts, and diagnosis codes |
-| `eligibility.py` | Evaluates member existence, status, and coverage dates |
-| `duplicate_checker.py` | Compares member, provider, procedure, and service date |
-| `pricing.py` | Assigns allowed amounts and classifies pricing failures |
-| `fraud_review.py` | Applies synthetic risk and business-review rules |
-| `retry_manager.py` | Defines retry limits, counts, and queue outcomes |
-| `manual_review.py` | Validates and routes simulated reviewer decisions |
-| `state_manager.py` | Defines legal workflow states and transitions |
-| `audit_logger.py` | Writes state changes to `claim_events` |
-| `error_handler.py` | Isolates unexpected claim-level failures |
-| `workflow_engine.py` | Coordinates the end-to-end workflow |
-| `chaos_runner.py` | Verifies intentionally problematic claim scenarios |
-| `reporting.py` | Generates claim, exception, and workflow reports |
-| `main.py` | Runs the application phases and prints results |
-
----
-
-## Workflow
-
-The application runs in four major phases.
-
-### Phase 1 — Initial claim processing
+A simplified text representation:
 
 ```text
-Claim intake
-    ↓
-Validation
-    ↓
-Eligibility
-    ↓
-Duplicate detection
-    ↓
-Pricing
-    ↓
-Fraud and business-rule review
+                Claims
+                    |
+                    v
+              Claim Intake
+                    |
+                    v
+               Validation
+                    |
+                    v
+               Eligibility
+                    |
+                    v
+            Duplicate Check
+                    |
+                    v
+                 Pricing
+                 /     \
+                /       \
+          Success      Timeout
+             |            |
+             |       Retry Queue
+             |            |
+             |<-----------+
+             v
+          Fraud Review
+           /       \
+          /         \
+     Low Risk     High Risk
+        |             |
+        |       Manual Review
+        |          /     \
+        |     Approve    Deny
+        |        |         |
+        +--------+---------+
+                 |
+                 v
+              Reporting
 ```
-
-### Phase 2 — Retry processing
-
-Temporary pricing failures enter `retry_queue`.
-
-```text
-PRICING
-    ↓
-PRICING_RETRY
-    ↓
-Retry Queue
-    ↓
-PRICING
-```
-
-A retry can end in:
-
-```text
-SUCCEEDED
-EXHAUSTED
-CANCELLED
-```
-
-### Phase 3 — Manual review
-
-Claims requiring human intervention enter `manual_review_queue`.
-
-```text
-MANUAL_REVIEW
-      ↓
-Reviewer decision
-      ├── APPROVED
-      └── DENIED
-```
-
-### Phase 4 — Controlled-outcome verification
-
-Configured chaos scenarios are compared against persisted PostgreSQL results.
-
-The verification checks:
-
-- Final claim status
-- Required state path
-- Audit reasons
-- Retry status
-- Retry count
-- Manual-review status
-
-The run reports a failure when a scenario does not reach its expected controlled outcome.
 
 ---
 
 ## Technology Stack
 
-| Technology | Use |
+| Technology | Purpose |
 |---|---|
 | Python 3.11+ | Workflow and business logic |
-| PostgreSQL | Current state, queues, and audit history |
-| Psycopg 3 | Python-to-PostgreSQL connectivity |
+| PostgreSQL | Claims, queues, state, and audit history |
+| Psycopg 3 | PostgreSQL connectivity |
 | python-dotenv | Local environment configuration |
 | Pytest | Automated testing |
-| CSV | Claim, member, and diagnosis data |
-| JSON | Pricing rules, review rules, reviewer decisions, and scenario expectations |
+| CSV | Claims, members, and diagnosis reference data |
+| JSON | Pricing rules, review rules, decisions, and scenario expectations |
 | Git and GitHub | Version control and portfolio publishing |
 
 Python 3.11 or newer is required because the project uses `StrEnum`.
@@ -227,13 +186,13 @@ Python 3.11 or newer is required because the project uses `StrEnum`.
 healthcare-claims-workflow/
 │
 ├── data/
+│   ├── chaos_scenarios.json
 │   ├── claims.csv
-│   ├── members.csv
 │   ├── diagnosis_codes.csv
-│   ├── pricing_rules.json
-│   ├── review_rules.json
 │   ├── manual_review_decisions.json
-│   └── chaos_scenarios.json
+│   ├── members.csv
+│   ├── pricing_rules.json
+│   └── review_rules.json
 │
 ├── database/
 │   ├── schema.sql
@@ -243,12 +202,12 @@ healthcare-claims-workflow/
 │   └── .gitkeep
 │
 ├── reports/
+│   ├── chaos_scenario_report.json
 │   ├── claim_summary.csv
 │   ├── claim_summary.json
 │   ├── exception_report.json
 │   ├── workflow_metrics.json
-│   ├── workflow_summary.json
-│   └── chaos_scenario_report.json
+│   └── workflow_summary.json
 │
 ├── src/
 │   ├── audit_logger.py
@@ -289,36 +248,112 @@ healthcare-claims-workflow/
 └── requirements.txt
 ```
 
+The local `.env` and `.venv` files are excluded from Git.
+
+---
+
+## Workflow
+
+The application runs in four phases.
+
+### Phase 1 — Initial processing
+
+```text
+Claim Intake
+    ↓
+Validation
+    ↓
+Eligibility
+    ↓
+Duplicate Detection
+    ↓
+Pricing
+    ↓
+Fraud and Business-Rule Review
+```
+
+### Phase 2 — Retry processing
+
+Temporary pricing failures enter `retry_queue`.
+
+```text
+PRICING
+    ↓
+PRICING_RETRY
+    ↓
+Retry Queue
+    ↓
+PRICING
+```
+
+A retry queue item can end in:
+
+```text
+SUCCEEDED
+EXHAUSTED
+CANCELLED
+```
+
+### Phase 3 — Manual review
+
+Claims that cannot continue automatically enter `manual_review_queue`.
+
+```text
+PENDING
+    ↓
+IN_REVIEW
+    ↓
+APPROVED or DENIED
+```
+
+### Phase 4 — Controlled-chaos verification
+
+The application compares persisted PostgreSQL results against the expectations in:
+
+```text
+data/chaos_scenarios.json
+```
+
+It verifies:
+
+- Final claim status
+- Required state path
+- Audit reasons
+- Retry status
+- Retry count
+- Manual-review status
+- Required timestamps and processing steps
+
 ---
 
 ## Data Model
 
 ### `claims`
 
-Stores the current state and core attributes of each claim.
+Stores the current state of every claim.
 
-Important columns:
+Important fields:
 
-| Column | Purpose |
+| Field | Description |
 |---|---|
-| `claim_id` | Unique claim identifier |
+| `claim_id` | Unique synthetic claim identifier |
 | `member_id` | Member associated with the claim |
 | `provider_id` | Provider associated with the claim |
 | `diagnosis_code` | Synthetic diagnosis reference |
 | `procedure_code` | Synthetic procedure reference |
 | `service_date` | Date of service |
-| `billed_amount` | Submitted amount |
-| `allowed_amount` | Amount assigned by pricing |
-| `submitted_date` | Claim submission date |
+| `billed_amount` | Submitted claim amount |
+| `allowed_amount` | Amount assigned during pricing |
+| `submitted_date` | Submission date |
 | `current_status` | Current workflow state |
 | `created_at` | Claim creation timestamp |
-| `updated_at` | Last state or value update |
+| `updated_at` | Last record update |
 
 ### `claim_events`
 
-Stores the complete audit history.
+Stores the complete state-transition history.
 
-| Column | Purpose |
+| Field | Description |
 |---|---|
 | `event_id` | Unique event identifier |
 | `claim_id` | Claim associated with the event |
@@ -333,28 +368,28 @@ Stores the complete audit history.
 
 Stores temporary pricing failures.
 
-| Column | Purpose |
+| Field | Description |
 |---|---|
 | `retry_id` | Queue record identifier |
 | `claim_id` | Claim waiting for retry |
-| `failed_step` | Step that failed |
-| `retry_count` | Attempts already made |
+| `failed_step` | Workflow step that failed |
+| `retry_count` | Retry attempts completed |
 | `max_retries` | Maximum automated attempts |
-| `next_retry_time` | Time the retry becomes available |
-| `retry_status` | Current queue outcome |
-| `last_error` | Most recent retry error |
+| `next_retry_time` | Time the item is available |
+| `retry_status` | Queue outcome |
+| `last_error` | Most recent error |
 
 ### `manual_review_queue`
 
-Stores claims requiring reviewer intervention.
+Stores claims requiring human intervention.
 
-| Column | Purpose |
+| Field | Description |
 |---|---|
 | `review_id` | Review record identifier |
 | `claim_id` | Claim requiring review |
-| `review_reason` | Reason automation stopped |
-| `review_status` | Review outcome or current state |
-| `reviewer_notes` | Simulated reviewer explanation |
+| `review_reason` | Explanation for the handoff |
+| `review_status` | Queue state or reviewer outcome |
+| `reviewer_notes` | Synthetic reviewer explanation |
 | `created_at` | Queue creation time |
 | `resolved_at` | Review completion time |
 
@@ -362,11 +397,11 @@ Stores claims requiring reviewer intervention.
 
 ## State Transitions
 
-The workflow does not permit arbitrary status changes.
+The workflow does not permit arbitrary state changes.
 
-### Primary happy path
+### Happy path
 
-| Current state | Allowed next state |
+| Current state | Next state |
 |---|---|
 | `RECEIVED` | `VALIDATING` |
 | `VALIDATING` | `ELIGIBILITY_CHECK` |
@@ -375,9 +410,9 @@ The workflow does not permit arbitrary status changes.
 | `PRICING` | `FRAUD_REVIEW` |
 | `FRAUD_REVIEW` | `APPROVED` |
 
-### Exception transitions
+### Exception paths
 
-| Current state | Possible exception state |
+| Current state | Possible next state |
 |---|---|
 | `VALIDATING` | `VALIDATION_FAILED` |
 | `ELIGIBILITY_CHECK` | `INELIGIBLE` |
@@ -391,8 +426,6 @@ The workflow does not permit arbitrary status changes.
 | `MANUAL_REVIEW` | `APPROVED` |
 | `MANUAL_REVIEW` | `DENIED` |
 
-Terminal states cannot move to another state automatically.
-
 Examples of blocked transitions:
 
 ```text
@@ -402,72 +435,69 @@ APPROVED → VALIDATING
 DENIED → PRICING
 ```
 
-The workflow validates transitions in Python and confirms that the persisted PostgreSQL state matches the expected current state before updating it.
+The workflow validates transitions in Python and confirms that PostgreSQL contains the expected current status before applying the update.
 
 ---
 
 ## Exception Handling
 
-Expected business exceptions receive specific controlled outcomes.
+Expected business exceptions receive controlled outcomes.
 
-| Condition | Controlled outcome |
+| Condition | Outcome |
 |---|---|
-| Missing required field | `VALIDATION_FAILED` |
-| Invalid diagnosis code | `VALIDATION_FAILED` |
-| Inactive member | `INELIGIBLE → DENIED` |
-| Expired coverage | `INELIGIBLE → DENIED` |
-| Member not found | `INELIGIBLE → DENIED` |
+| Missing required value | `VALIDATION_FAILED` |
+| Invalid diagnosis | `VALIDATION_FAILED` |
+| Unknown member | `INELIGIBLE → DENIED` |
+| Inactive or expired coverage | `INELIGIBLE → DENIED` |
 | Duplicate claim | `DUPLICATE` |
-| Missing pricing rule | `MANUAL_REVIEW` |
 | Temporary pricing timeout | `PRICING_RETRY` |
-| High-risk claim | `MANUAL_REVIEW` |
+| Missing pricing rule | `MANUAL_REVIEW` |
+| High-risk rule | `MANUAL_REVIEW` |
 | Retry exhaustion | `MANUAL_REVIEW` |
 | Reviewer approval | `APPROVED` |
 | Reviewer denial | `DENIED` |
 
-Unexpected technical exceptions are isolated by claim.
+Unexpected technical errors are isolated by claim.
 
 ```text
 Claim A → APPROVED
 
-Claim B → unexpected exception
-        → controlled FAILED result
+Claim B → unexpected technical error
+        → FAILED result
         → SYSTEM_ERROR audit attempt
 
 Claim C → continues processing
 ```
 
-A single failed claim does not terminate the rest of the batch.
+A single failed claim does not stop the rest of the batch.
 
 ---
 
 ## Retry Logic
 
-Pricing failures are classified as either temporary or permanent.
+Pricing failures are classified as temporary or permanent.
 
 ### Temporary failure
 
-A temporary failure may succeed without changing the claim or pricing configuration.
-
-Example:
+A temporary failure may succeed later without changing business configuration.
 
 ```text
-Temporary pricing timeout
-        ↓
+Pricing timeout
+    ↓
 PRICING_RETRY
-        ↓
+    ↓
 retry_queue
-        ↓
+    ↓
 Retry attempt
 ```
 
-Retry records track:
+Retry records store:
 
 - Failed step
-- Current retry count
+- Retry count
 - Maximum retries
 - Most recent error
-- Final retry outcome
+- Final queue outcome
 
 ### Successful retry
 
@@ -490,12 +520,12 @@ PRICING
     ↓
 PRICING_RETRY
     ↓
-Three failed retry attempts
+Maximum attempts reached
     ↓
 MANUAL_REVIEW
 ```
 
-The retry record remains `EXHAUSTED`, even after the claim receives a final reviewer decision.
+The retry queue may end in `EXHAUSTED` while the claim later ends in `APPROVED` or `DENIED` through manual review.
 
 This preserves the distinction between:
 
@@ -509,40 +539,28 @@ Final claim outcome
 
 ## Manual Review
 
-Manual review represents a controlled handoff from automation to a reviewer.
-
-Claims may enter manual review because of:
+Claims may require manual review because of:
 
 - Missing pricing configuration
 - Permanent pricing failure
 - High billed amount
 - Configured procedure-code review
-- Retry exhaustion
 - Fraud or business-rule trigger
+- Retry exhaustion
 
-Queue progression:
-
-```text
-PENDING
-    ↓
-IN_REVIEW
-    ↓
-APPROVED or DENIED
-```
-
-Synthetic decisions are loaded from:
+Synthetic reviewer decisions are loaded from:
 
 ```text
 data/manual_review_decisions.json
 ```
 
-Each decision contains:
+Example:
 
 ```json
 {
     "claim_id": "CLM016",
     "decision": "APPROVED",
-    "reviewer_notes": "Synthetic reviewer explanation."
+    "reviewer_notes": "The synthetic supporting documentation was reviewed."
 }
 ```
 
@@ -568,8 +586,8 @@ The `claim_events` table answers:
 
 ```text
 Where has the claim been?
-Why did its status change?
-When did the change occur?
+Why did the claim move?
+When did the change happen?
 ```
 
 ### Current claim state
@@ -583,7 +601,7 @@ FROM claims
 WHERE claim_id = 'CLM015';
 ```
 
-### Complete claim journey
+### Complete claim history
 
 ```sql
 SELECT
@@ -619,23 +637,15 @@ ORDER BY event_id;
 
 ## Operational Reporting
 
-Running the application regenerates the operational reports.
+Running the application regenerates:
 
-### `claim_summary.csv`
+### `reports/claim_summary.csv`
 
-Contains one row per claim, including:
+One detailed row per claim.
 
-- Claim ID
-- Member and provider
-- Diagnosis and procedure
-- Service date
-- Billed amount
-- Allowed amount
-- Final status
+### `reports/claim_summary.json`
 
-### `claim_summary.json`
-
-Contains aggregate claim volume:
+Aggregate counts including:
 
 - Claims received
 - Claims approved
@@ -646,7 +656,7 @@ Contains aggregate claim volume:
 - Automatic approvals
 - Reviewer approvals
 
-For this project:
+In this project:
 
 ```text
 Rejected claims
@@ -654,34 +664,23 @@ Rejected claims
 VALIDATION_FAILED + DUPLICATE
 ```
 
-Denied claims remain separate because denial represents an eligibility or reviewer decision.
+### `reports/exception_report.json`
 
-### `exception_report.json`
-
-Groups exceptions into:
+Categorized exceptions:
 
 - Validation failures
 - Eligibility failures
-- Duplicate claims
+- Duplicates
 - Pricing failures
 - Exhausted retries
 - Manual reviews
-- Unexpected system errors
+- System errors
 
-Each category contains:
+### `reports/workflow_metrics.json`
 
-- Event count
-- Unique affected-claim count
-- Claim IDs
-- Detailed records
-- Reasons
-- Timestamps
+Operational metrics:
 
-### `workflow_metrics.json`
-
-Includes:
-
-- Claims by final status
+- Claims by status
 - Claims requiring retries
 - Average retry count
 - Retry success percentage
@@ -693,13 +692,13 @@ Includes:
 - Denial percentage
 - Rejection percentage
 
-### `workflow_summary.json`
+### `reports/workflow_summary.json`
 
-Preserves the original concise Version 1 summary format.
+A concise status summary.
 
-### `chaos_scenario_report.json`
+### `reports/chaos_scenario_report.json`
 
-Shows whether every intentionally problematic scenario reached its expected controlled outcome.
+Verification results for intentionally problematic claims.
 
 ---
 
@@ -712,13 +711,13 @@ git clone https://github.com/buildwithmanny/healthcare-claims-workflow.git
 cd healthcare-claims-workflow
 ```
 
-### 2. Create a virtual environment
+### 2. Create the virtual environment
 
 ```bash
 python3 -m venv .venv
 ```
 
-Activate it on macOS or Linux:
+Activate it:
 
 ```bash
 source .venv/bin/activate
@@ -737,7 +736,7 @@ python -m pip install -r requirements.txt
 createdb claims_workflow
 ```
 
-An alternative is to use PostgreSQL directly:
+Or:
 
 ```bash
 psql -U postgres
@@ -748,19 +747,19 @@ CREATE DATABASE claims_workflow;
 \q
 ```
 
-### 5. Apply the database schema
+### 5. Apply the schema
 
 ```bash
 psql -U postgres -d claims_workflow -f database/schema.sql
 ```
 
-### 6. Configure environment variables
+### 6. Create the local environment file
 
 ```bash
 cp .env.example .env
 ```
 
-Update `.env` with the local PostgreSQL password.
+Enter the local PostgreSQL password inside `.env`.
 
 ### 7. Run the application
 
@@ -768,19 +767,19 @@ Update `.env` with the local PostgreSQL password.
 python -m src.main
 ```
 
-The application will:
+The application:
 
-1. Load synthetic source data.
-2. Reset the local demonstration tables.
-3. Process initial claims.
-4. Process retry records.
-5. Process manual-review decisions.
-6. Verify chaos scenarios.
-7. Generate operational reports.
+1. Loads synthetic data.
+2. Resets the local demonstration tables.
+3. Processes initial claims.
+4. Processes retries.
+5. Processes manual reviews.
+6. Verifies controlled-chaos scenarios.
+7. Generates operational reports.
 
 ---
 
-## Environment Variable Setup
+## Environment Variables
 
 The local `.env` file should contain:
 
@@ -792,15 +791,15 @@ DB_USER=postgres
 DB_PASSWORD=your_actual_local_password
 ```
 
-The `.env` file contains local credentials and must not be committed.
+The `.env` file must remain local.
 
-Confirm Git ignores it:
+Confirm it is ignored:
 
 ```bash
 git check-ignore -v .env
 ```
 
-Confirm it is not tracked:
+Confirm it is not currently tracked:
 
 ```bash
 git ls-files .env
@@ -808,60 +807,43 @@ git ls-files .env
 
 The second command should return no output.
 
-The repository includes `.env.example` as a safe configuration template:
+Confirm it never appeared in Git history:
 
-```dotenv
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=claims_workflow
-DB_USER=postgres
-DB_PASSWORD=
+```bash
+git log --all --full-history -- .env
 ```
+
+This command should also return no output.
 
 ---
 
 ## Testing
 
-The automated test suite covers:
+The automated tests cover:
 
 - Valid claim processing
 - Missing member ID
-- Invalid diagnosis code
-- Active eligibility
-- Expired eligibility
-- Unknown member
+- Invalid diagnosis
+- Eligibility success
+- Eligibility failure
+- Unknown members
 - Duplicate detection
-- Unique claim routing
 - Pricing success
-- Missing pricing rule
 - Pricing timeout
-- Retry success
+- Pricing retry success
 - Retry exhaustion
-- Manual-review approval
-- Manual-review denial
+- Manual-review routing
+- Reviewer approval
+- Reviewer denial
 - Valid state transitions
 - Invalid state transitions
 - Terminal-state protection
-- Claim-level failure isolation
+- Claim-level error isolation
 
-Run the full test suite through the active virtual environment:
+Run all tests:
 
 ```bash
 python -m pytest -v
-```
-
-Using `python -m pytest` ensures that pytest runs through the same Python interpreter as the virtual environment.
-
-The project includes:
-
-```ini
-pythonpath = .
-```
-
-inside `pytest.ini`, allowing tests to import modules using:
-
-```python
-from src.pricing import evaluate_pricing
 ```
 
 Run one test file:
@@ -870,17 +852,29 @@ Run one test file:
 python -m pytest tests/test_state_manager.py -v
 ```
 
-Run the claim-isolation test:
+Run the workflow-resilience test:
 
 ```bash
 python -m pytest tests/test_workflow_resilience.py -v
+```
+
+The repository uses:
+
+```ini
+pythonpath = .
+```
+
+inside `pytest.ini`, allowing imports such as:
+
+```python
+from src.pricing import evaluate_pricing
 ```
 
 ---
 
 ## Example Outputs
 
-With the current 18-claim synthetic dataset, the expected final status totals are:
+With the current 18-claim synthetic dataset:
 
 ```text
 APPROVED: 7
@@ -889,7 +883,7 @@ DUPLICATE: 1
 VALIDATION_FAILED: 5
 ```
 
-Expected aggregate metrics:
+Operational metrics:
 
 ```text
 Claims received: 18
@@ -912,7 +906,7 @@ Denial percentage: 27.78%
 Rejection percentage: 33.33%
 ```
 
-Expected retry outcomes:
+Retry examples:
 
 ```text
 CLM015
@@ -929,7 +923,7 @@ Manual-review status: DENIED
 Final claim status: DENIED
 ```
 
-Expected chaos verification:
+Controlled-chaos result:
 
 ```text
 Controlled scenarios: 11 of 11
@@ -937,118 +931,39 @@ Controlled scenarios: 11 of 11
 
 ---
 
-## Example PostgreSQL Queries
-
-### Claims by final status
-
-```sql
-SELECT
-    current_status,
-    COUNT(*) AS claim_count
-FROM claims
-GROUP BY current_status
-ORDER BY current_status;
-```
-
-### Retry metrics
-
-```sql
-SELECT
-    COUNT(DISTINCT claim_id) AS claims_requiring_retries,
-    AVG(retry_count) AS average_retry_count,
-    COUNT(*) FILTER (
-        WHERE retry_status = 'SUCCEEDED'
-    ) AS successful_retries,
-    COUNT(*) FILTER (
-        WHERE retry_status = 'EXHAUSTED'
-    ) AS exhausted_retries
-FROM retry_queue;
-```
-
-### Manual-review volume
-
-```sql
-SELECT
-    COUNT(*) AS manual_review_volume,
-    COUNT(*) FILTER (
-        WHERE review_status = 'APPROVED'
-    ) AS reviewer_approvals,
-    COUNT(*) FILTER (
-        WHERE review_status = 'DENIED'
-    ) AS reviewer_denials
-FROM manual_review_queue;
-```
-
-### Pricing failures
-
-```sql
-SELECT
-    claim_id,
-    previous_status,
-    new_status,
-    retry_attempt,
-    event_reason,
-    created_at
-FROM claim_events
-WHERE processing_step IN (
-    'PRICING',
-    'PRICING_RETRY'
-)
-  AND new_status IN (
-      'PRICING_RETRY',
-      'MANUAL_REVIEW',
-      'FAILED'
-  )
-ORDER BY claim_id, event_id;
-```
-
----
-
 ## Lessons Learned
 
-### Workflow design requires explicit states
+### Explicit states make workflows understandable
 
-A workflow becomes easier to reason about when every claim has one current status and each transition is explicitly allowed or rejected.
+Each claim has one current state and a defined set of allowed next states.
 
-### Current state and history serve different purposes
+### Current state and audit history serve different purposes
 
-The `claims` table provides the latest operational position. The `claim_events` table preserves the complete journey.
+`claims` shows the current operational position. `claim_events` preserves the entire journey.
 
-Both are required for reliable troubleshooting.
+### Temporary and permanent failures require different handling
 
-### Temporary and permanent failures should not be handled the same way
+A timeout belongs in a retry queue. Missing configuration requires intervention.
 
-A timeout may succeed later and belongs in a retry queue. Missing pricing configuration will not be fixed by repeating the same operation and requires intervention.
+### Retry exhaustion is not always the final business outcome
 
-### Retry exhaustion is not necessarily the final business outcome
+Automation may end in `EXHAUSTED`, while manual review produces the final claim decision.
 
-The automated retry process can end in `EXHAUSTED`, while a reviewer later makes the final claim decision.
+### Manual review is a process, not only a status
 
-### Manual review is a workflow, not just a status
+A useful review process requires a queue, reason, status, notes, decision, and resolution timestamp.
 
-A useful manual-review design requires a queue, reason, status, reviewer notes, decision, and resolution timestamp.
+### Controlled failure is successful system behavior
 
-### Error isolation improves operational resilience
+The goal is not to approve every claim. The goal is to give every claim a predictable, explainable, and auditable outcome.
 
-One unexpected claim failure should not prevent unrelated claims from completing processing.
+### Error isolation improves resilience
 
-### Audit reasons matter as much as audit statuses
+One unexpected technical failure should not prevent unrelated claims from completing.
 
-A status history without explanations cannot answer why a claim changed. Each event therefore includes a processing step, reason, and timestamp.
+### Operational reporting must distinguish events from claims
 
-### Operational reporting should distinguish counts from events
-
-One claim can produce several pricing-failure events across multiple retries. Reports distinguish:
-
-```text
-Event count
-from
-Unique affected-claim count
-```
-
-### Controlled failure is a successful system behavior
-
-The goal is not for every claim to be approved. The goal is for every claim to reach a predictable, explainable, and auditable outcome.
+A single claim can produce multiple pricing-failure events across several retry attempts.
 
 ---
 
@@ -1056,19 +971,20 @@ The goal is not for every claim to be approved. The goal is for every claim to r
 
 This project demonstrates the ability to:
 
-- Translate a business workflow into explicit technical states
-- Build Python processing modules with separate responsibilities
+- Translate business processes into technical workflow states
+- Build modular Python processing components
 - Model operational data in PostgreSQL
-- Validate legal and illegal state transitions
-- Create complete audit history
+- Enforce legal state transitions
+- Preserve complete audit history
 - Distinguish temporary and permanent failures
-- Implement bounded retry handling
-- Build manual-review routing
+- Implement bounded retries
+- Route claims into manual review
+- Simulate reviewer decisions
 - Isolate claim-level technical errors
-- Create automated tests
+- Add automated tests
 - Verify controlled failure scenarios
-- Generate operational reports and metrics
+- Generate operational reports
 
-A concise project description:
+Concise project description:
 
-> Built a stateful healthcare claims workflow using Python and PostgreSQL. The system validates claims, verifies eligibility, detects duplicates, assigns synthetic pricing, handles bounded retries, routes exceptions to manual review, records complete audit history, isolates claim-level failures, verifies controlled chaos scenarios, and generates operational reports.
+> Built a stateful healthcare claims workflow using Python and PostgreSQL. The system validates claims, verifies eligibility, detects duplicates, assigns synthetic pricing, handles bounded retries, routes exceptions to manual review, records complete audit history, isolates claim-level failures, verifies controlled-chaos scenarios, and generates operational reports.
